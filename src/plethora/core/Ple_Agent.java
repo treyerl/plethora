@@ -74,9 +74,6 @@ public class Ple_Agent {
 
 	}
 	
-	public void trolling(){
-		
-	}
 
 	/**
 	 * Method to update location. Addes the acceleration (acc) to the velocity which gets passed to the location. 
