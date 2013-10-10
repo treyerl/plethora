@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="C:/Users/Jose/Downloads/processing-2.0.3/core/library/core.jar"/>
+	<classpathentry kind="lib" path="C:/Users/Jose/Documents/Processing/libraries/toxiclibscore/library/toxiclibscore.jar"/>
+	<classpathentry kind="lib" path="C:/Users/Jose/Documents/Processing/libraries/toxiclibs_p5/library/toxiclibs_p5.jar"/>
+	<classpathentry kind="lib" path="C:/Users/Jose/Documents/Processing/libraries/peasycam/library/peasycam.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

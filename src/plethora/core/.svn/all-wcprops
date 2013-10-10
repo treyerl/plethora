@@ -1,0 +1,47 @@
+K 25
+svn:wc:ra_dav:version-url
+V 48
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core
+END
+Ple_Image.java
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core/Ple_Image.java
+END
+Ple_Terrain.java
+K 25
+svn:wc:ra_dav:version-url
+V 65
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core/Ple_Terrain.java
+END
+Ple_Node.java
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core/Ple_Node.java
+END
+Ple_Camera.java
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core/Ple_Camera.java
+END
+Ple_Tile.java
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core/Ple_Tile.java
+END
+Ple_Util.java
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core/Ple_Util.java
+END
+Ple_Agent.java
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/4/trunk/Plethora/src/plethora/core/Ple_Agent.java
+END
