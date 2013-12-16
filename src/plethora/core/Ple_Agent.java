@@ -278,6 +278,50 @@ public class Ple_Agent {
 			}
 		}
 	}
+	
+	/**
+	 * calculates the spring if the 'drop anchor method has been activated'
+	 * @param stiffness - stiffness of the spring
+	 * @param damping - damping of the spring
+	 * @param restLength - distance to the anchor 
+	 * @param threshold - distance to the anchor 
+	 * @param show - display a line for the spring
+	 */
+	public void updateAnchor2( float stiffness, float damping, float restLength, float scale, float threshold, boolean show){
+		float gravity = 0.0f; //0.6f
+		float mass = 1.0f; // 2.0
+
+		//float dist = anchor.distanceTo(loc);
+		//float normDistStrength = (dist - restLength) / dist;
+		
+		if(lock){
+			float forceX = ((anchor.x - loc.x)-restLength) * stiffness;
+			float ax = forceX / mass;
+			vx = damping * (vx + ax);
+			//loc.x += vx;
+			acc.x += vx * scale;
+			float forceY = ((anchor.y - loc.y)-restLength) * stiffness;
+			forceY += gravity;
+			float ay = forceY / mass;
+			vy = damping * (vy + ay);
+			//loc.y += vy;
+			acc.y += vy* scale;
+			float forceZ = ((anchor.z - loc.z)-restLength) * stiffness;
+			forceZ += gravity;
+			float az = forceZ / mass;
+			vz = damping * (vz + az);
+			//loc.z += vz;
+			acc.z += vz* scale;
+
+			float d = loc.distanceTo(anchor);
+
+			if(d < threshold){
+				if(show){
+					vLine(loc,anchor);	
+				}
+			}
+		}
+	}
 
 
 	/**
@@ -779,6 +823,61 @@ public class Ple_Agent {
 
 		Vec3D circleOffSet = new Vec3D(wanderR* PApplet.cos(wandertheta),wanderR* PApplet.sin(wandertheta),0);
 		Vec3D target = circleloc.add(circleOffSet);
+		acc.addSelf(steer(target,false));  // Steer towards it 
+	} 
+	
+	/**
+	 * @param wanderR - wander Radius.
+	 * @param wanderD - wander distance.
+	 * @param amplitude - amplitud of the occilation wave.
+	 * @param period - period of the occilation wave.
+	 * @param strength - how strong is the force of occilation.
+	 */
+	public void Occilate2D(float wanderR, float wanderD, float amplitude, float period, float strength) {
+		float occ = amplitude * PApplet.cos(PApplet.TWO_PI * p5.frameCount / period);
+		wandertheta = occ;     // Randomly change wander theta
+		
+
+		// Now we have to calculate the new location to steer towards on the wander circle
+		Vec3D circleloc = vel.copy();  // Start with velocity
+		circleloc.normalize();            // Normalize to get heading
+		circleloc.scaleSelf(wanderD);          // Multiply by distance
+		circleloc.addSelf(loc);               // Make it relative to boid's location
+
+		float h = vel.headingXY();
+		
+		Vec3D circleOffSet = new Vec3D(wanderR* PApplet.cos(wandertheta + h),wanderR* PApplet.sin(wandertheta + h),0);
+		Vec3D target = circleloc.add(circleOffSet);
+		//seek(target, strength);
+		acc.addSelf(steer(target,false));  // Steer towards it 
+	} 
+	
+	/**
+	 * @param wanderR - wander Radius.
+	 * @param wanderD - wander distance.
+	 * @param amplitude - amplitud of the occilation wave.
+	 * @param period - period of the occilation wave.
+	 * @param strength - how strong is the force of occilation.
+	 * @param occHeight - height amplitud of occilation.
+	 */
+	public void Occilate3D(float wanderR, float wanderD, float amplitude, float period, float strength, float occHeight) {
+		float occ = amplitude * PApplet.cos(PApplet.TWO_PI * p5.frameCount / period);
+		wandertheta = occ;     // Randomly change wander theta
+		
+
+		// Now we have to calculate the new location to steer towards on the wander circle
+		Vec3D circleloc = vel.copy();  // Start with velocity
+		circleloc.normalize();            // Normalize to get heading
+		circleloc.scaleSelf(wanderD);          // Multiply by distance
+		circleloc.addSelf(loc);               // Make it relative to boid's location
+
+		float h = vel.headingXY();
+		float occZ = PApplet.map(occ, -amplitude, amplitude, -occHeight,occHeight);
+		
+		Vec3D circleOffSet = new Vec3D(wanderR* PApplet.cos(wandertheta + h),wanderR* PApplet.sin(wandertheta + h), 0);
+		Vec3D target = circleloc.add(circleOffSet);
+		target.z = occZ;
+		//seek(target, strength);
 		acc.addSelf(steer(target,false));  // Steer towards it 
 	} 
 	

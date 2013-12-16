@@ -304,10 +304,11 @@ public class Ple_Util {
 		int count2 = 0;
 		
 		for (Ple_Agent pa : boids) {
-			
+			output.println("agent");
 			for(Vec3D v: pa.trail){
 				if(v != null){
-				output.println(v.x + "," + v.y + "," + v.z + "," + count + "," + count2);
+				//output.println(v.x + "," + v.y + "," + v.z + "," + count + "," + count2);
+				output.println(v.x + "," + v.y + "," + v.z);
 				count2 ++;
 				}
 			}
