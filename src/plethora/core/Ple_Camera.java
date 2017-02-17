@@ -4,6 +4,7 @@ import ch.fhnw.ether.controller.IController;
 import ch.fhnw.ether.scene.camera.ICamera;
 import ch.fhnw.ether.view.IView;
 import ch.fhnw.util.math.Vec3;
+import ch.fhnw.util.math.path.CatmullRomSpline;
 import ch.fhnw.util.math.path.IPath;
 
 public class Ple_Camera {
@@ -227,44 +228,8 @@ public class Ple_Camera {
 	 * @param param
 	 * @return
 	 */
-	public Vec3 ptOnParam (Spline3D sp, float param) {
-		float tlen = 0;
-		int count = sp.pointList.size()-1;
-		float [] aculengs = new float[count];
-		float [] lengs = new float[count];
-		for(int i = 1; i < sp.pointList.size(); i++){
-			Vec3D v = sp.pointList.get(i);
-			Vec3D bef = sp.pointList.get(i-1);
-			Vec3D dif = v.sub(bef);
-			float d = dif.magnitude();
-			tlen += d;
-			lengs[i-1] = d;
-			aculengs[i-1] = tlen;
-		}
-
-		float linearPos = tlen*param;
-		int segment = 0;
-		float loclen = linearPos;
-
-		//determine in what segment u are:
-		for(int j = 0; j < count; j++){
-			if (linearPos > aculengs[j]){
-				segment = j+1;
-			}
-		}
-		//determine your distance in your own segment:
-		for(int k = 0; k < segment; k++){
-			loclen -= lengs[k];
-		}
-
-		Vec3D v1 = sp.pointList.get(segment+1);
-		Vec3D bef1 = sp.pointList.get(segment);
-		Vec3 bef = new Vec3(bef1.x, bef1.y, bef1.z);
-
-		Vec3 dif = new Vec3(v1.x, v1.y, v1.z).subtract(bef)
-						.normalize().scale(loclen).add(bef);
-		//vPoint(dif);
-		return dif;
+	public Vec3 ptOnParam (CatmullRomSpline sp, float param) {
+		return sp.position(param);
 	}
 
 
