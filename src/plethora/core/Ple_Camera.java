@@ -1,22 +1,20 @@
 package plethora.core;
 
-import java.util.Iterator;
-
-import peasy.PeasyCam;
-import processing.core.PApplet;
-import processing.core.PConstants;
-import toxi.geom.Spline3D;
-import toxi.geom.Vec3D;
+import ch.fhnw.ether.controller.IController;
+import ch.fhnw.ether.scene.camera.ICamera;
+import ch.fhnw.ether.view.IView;
+import ch.fhnw.util.math.Vec3;
+import ch.fhnw.util.math.path.IPath;
 
 public class Ple_Camera {
 
-	PApplet p5;
-	public Vec3D cLoc;
-	public Vec3D tLoc;
-	public Vec3D up;
+	IController controller;
+	private Vec3 cLoc;
+	private Vec3 tLoc;
+	private Vec3 up;
 
-	public Spline3D path1;
-	public Spline3D path2;
+	public IPath cameraPath;
+	public IPath targetPath;
 
 	/**
 	 * 
@@ -28,15 +26,12 @@ public class Ple_Camera {
 	 * @param y2
 	 * @param z2
 	 */
-	public Ple_Camera(PApplet _p5, float x1, float y1, float z1, float x2, float y2, float z2){
-		p5 = _p5;
+	public Ple_Camera(IController controller, float x1, float y1, float z1, float x2, float y2, float z2){
+		this.controller = controller;
 
-		up = new Vec3D(0,0,-1);
-		cLoc = new Vec3D (x1,y1,z1);
-		tLoc = new Vec3D (x2, y2, z2);
-
-		path1 = new Spline3D();
-		path2 = new Spline3D();
+		up = new Vec3(0,0,-1);
+		cLoc = new Vec3(x1,y1,z1);
+		tLoc = new Vec3(x2, y2, z2);
 	}
 
 
@@ -44,7 +39,14 @@ public class Ple_Camera {
 	 * 
 	 */
 	public void update(){
-		p5.camera(cLoc.x, cLoc.y, cLoc.z,  tLoc.x, tLoc.y, tLoc.z, up.x,up.y,up.z);
+//		p5.camera(cLoc.x, cLoc.y, cLoc.z,  tLoc.x, tLoc.y, tLoc.z, up.x,up.y,up.z);
+		IView view = controller.getCurrentView();
+		if (view != null) {
+			ICamera cam = controller.getCamera(view);
+			cam.setPosition(cLoc);
+			cam.setTarget(tLoc);
+			cam.setUp(up);
+		}
 	}
 	
 
@@ -55,7 +57,7 @@ public class Ple_Camera {
 	 * @param speedZ
 	 */
 	public void moveStraightCamera(float speedX, float speedY, float speedZ){
-		moveStraight(cLoc, speedX,  speedY,  speedZ);
+		cLoc = moveStraight(cLoc, speedX,  speedY,  speedZ);
 	}
 
 
@@ -66,7 +68,7 @@ public class Ple_Camera {
 	 * @param speedZ
 	 */
 	public void moveStraightTarget(float speedX, float speedY, float speedZ){
-		moveStraight(tLoc, speedX,  speedY,  speedZ);
+		tLoc = moveStraight(tLoc, speedX,  speedY,  speedZ);
 	}
 
 	/**
@@ -76,10 +78,8 @@ public class Ple_Camera {
 	 * @param speedY
 	 * @param speedZ
 	 */
-	public void moveStraight(Vec3D v, float speedX, float speedY, float speedZ){
-		v.x += speedX;
-		v.y += speedY;
-		v.z += speedZ;
+	public Vec3 moveStraight(Vec3 v, float speedX, float speedY, float speedZ){
+		return new Vec3(v.x + speedX, v.y + speedY, v.z + speedZ);
 	}
 
 
@@ -92,7 +92,7 @@ public class Ple_Camera {
 	 * @param centerZ
 	 */
 	public void moveCircleCamera(float radius, float speed, float centerX, float centerY, float centerZ){
-		moveCircle(cLoc, radius,  speed,  centerX,  centerY,  centerZ);
+		cLoc = moveCircle(cLoc, radius,  speed,  centerX,  centerY,  centerZ);
 	}
 
 	/**
@@ -104,7 +104,7 @@ public class Ple_Camera {
 	 * @param centerZ
 	 */
 	public void moveCircleTarget(float radius, float speed, float centerX, float centerY, float centerZ){
-		moveCircle(tLoc, radius,  speed,  centerX,  centerY,  centerZ);
+		tLoc = moveCircle(tLoc, radius,  speed,  centerX,  centerY,  centerZ);
 	}
 
 	/**
@@ -116,10 +116,11 @@ public class Ple_Camera {
 	 * @param centerY
 	 * @param centerZ
 	 */
-	public void moveCircle(Vec3D v, float radius, float speed, float centerX, float centerY, float centerZ){
-		v.x = (PApplet.cos(p5.frameCount * speed) * radius) + centerX; 
-		v.y = (PApplet.sin(p5.frameCount * speed) * radius) + centerY; 
-		v.z = centerZ;
+	public Vec3 moveCircle(Vec3 v, float radius, float speed, float centerX, float centerY, float centerZ){
+		double frameCount = controller.getScheduler().getTime();
+		double x = (Math.cos(frameCount * speed) * radius) + centerX; 
+		double y = (Math.sin(frameCount * speed) * radius) + centerY; 
+		return new Vec3(x, y, centerZ);
 	}
 
 	/**
@@ -129,7 +130,7 @@ public class Ple_Camera {
 	 * @param speed
 	 */
 	public void ocilateXCamera(float amplitud, float period){
-		cLoc.x += moveOcilating(amplitud,  period);
+		cLoc = new Vec3(cLoc.x + moveOcilating(amplitud,  period), cLoc.y, cLoc.z);
 	}
 
 	/**
@@ -139,7 +140,7 @@ public class Ple_Camera {
 	 * @param speed
 	 */
 	public void ocilateYCamera(float amplitud, float period){
-		cLoc.y += moveOcilating(amplitud,  period);
+		cLoc = new Vec3(cLoc.x, cLoc.y + moveOcilating(amplitud,  period), cLoc.z);
 	}
 
 	/**
@@ -149,7 +150,7 @@ public class Ple_Camera {
 	 * @param speed
 	 */
 	public void ocilateYtarget(float amplitud, float period){
-		tLoc.y += moveOcilating(amplitud,  period);
+		tLoc = new Vec3(tLoc.x, tLoc.y + moveOcilating(amplitud,  period), tLoc.z);
 	}
 
 	/**
@@ -159,7 +160,7 @@ public class Ple_Camera {
 	 * @param speed
 	 */
 	public void ocilateXtarget(float amplitud, float period){
-		tLoc.x += moveOcilating( amplitud,  period);
+		tLoc = new Vec3(tLoc.x + moveOcilating( amplitud,  period), tLoc.y, tLoc.z);
 	}
 
 
@@ -171,8 +172,14 @@ public class Ple_Camera {
 	 * @param period
 	 * @param speed
 	 */
-	public float moveOcilating(float amplitud, float period){	 
-		return amplitud * PApplet.cos(PConstants.TWO_PI * p5.frameCount / period) ;
+	public float moveOcilating(float amplitud, float period){	
+		double frameCount = controller.getScheduler().getTime();
+		return (float) (amplitud * Math.cos(Math.PI * 2 * frameCount / period)) ;
+	}
+	
+	public Ple_Camera setCameraPath(IPath path){
+		cameraPath = path;
+		return this;
 	}
 	
 	/**
@@ -180,12 +187,13 @@ public class Ple_Camera {
 	 * @param time
 	 * @param smooth
 	 */
-	public void camaraFollowPath(float time, boolean smooth){
-		Vec3D v = followPath(path1, time, smooth);
-		
-		cLoc.x = v.x;
-		cLoc.y = v.y;
-		cLoc.z = v.z;
+	public void camaraFollowPath(float time){
+		cLoc = followPath(cameraPath, time);
+	}
+	
+	public Ple_Camera setTargetPath(IPath path){
+		targetPath = path;
+		return this;
 	}
 	
 	/**
@@ -193,74 +201,25 @@ public class Ple_Camera {
 	 * @param time
 	 * @param smooth
 	 */
-	public void targetFollowPath(float time, boolean smooth){
-		Vec3D v = followPath(path2, time, smooth);
-		
-		tLoc.x = v.x;
-		tLoc.y = v.y;
-		tLoc.z = v.z;
+	public void targetFollowPath(float time){
+		tLoc = followPath(targetPath, time);
 	}
 
 
 	/**
 	 * 
-	 * @param sp
+	 * @param path
 	 * @param time
 	 */
-	public Vec3D followPath(Spline3D sp, float time, boolean smooth){
-
-		Spline3D pathsp = new Spline3D();
-		Vec3D locInSpline = new Vec3D();
-		if(sp.pointList.size() > 1){
-
-			if(smooth){
-				pathsp = smoothPath(sp, 8);
-			}else{
-				pathsp = sp;
-			}
-			
-			float param = (float) p5.frameCount/time;
+	public Vec3 followPath(IPath path, float time){
+		if(path.getNumNodes() > 1){		
+			double frameCount = controller.getScheduler().getTime();
+			float param = (float) frameCount/time;
 			if (param > 1) param = 1;
-
-			locInSpline = ptOnParam(pathsp, param);
-
+			return path.position(param);
 		}
-		return locInSpline;
+		return Vec3.ZERO;
 	}
-
-	/**
-	 * 
-	 * @param sp
-	 * @param RES
-	 * @return
-	 */
-	public Spline3D smoothPath(Spline3D sp, int RES){
-
-		Spline3D nuSp = new Spline3D ();	
-		for(Iterator <Vec3D> i = sp.computeVertices(RES).iterator(); i.hasNext();) {
-			Vec3D p =(Vec3D)i.next();
-			nuSp.add(p);
-		}
-		return nuSp;
-	}
-
-
-	/**
-	 * 
-	 * @param v
-	 */
-	public void addPointToCameraPath(Vec3D v){
-		path1.add(v);
-	}
-
-	/**
-	 * 
-	 * @param v
-	 */
-	public void addPointToTargetPath(Vec3D v){
-		path2.add(v);
-	}
-
 
 	/**
 	 * 
@@ -268,7 +227,7 @@ public class Ple_Camera {
 	 * @param param
 	 * @return
 	 */
-	public Vec3D ptOnParam (Spline3D sp, float param) {
+	public Vec3 ptOnParam (Spline3D sp, float param) {
 		float tlen = 0;
 		int count = sp.pointList.size()-1;
 		float [] aculengs = new float[count];
@@ -300,12 +259,10 @@ public class Ple_Camera {
 
 		Vec3D v1 = sp.pointList.get(segment+1);
 		Vec3D bef1 = sp.pointList.get(segment);
+		Vec3 bef = new Vec3(bef1.x, bef1.y, bef1.z);
 
-		Vec3D dif = v1.sub(bef1);
-
-		dif.normalize();
-		dif.scaleSelf(loclen);
-		dif.addSelf(bef1);
+		Vec3 dif = new Vec3(v1.x, v1.y, v1.z).subtract(bef)
+						.normalize().scale(loclen).add(bef);
 		//vPoint(dif);
 		return dif;
 	}

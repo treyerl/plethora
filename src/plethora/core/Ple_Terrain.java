@@ -1,11 +1,27 @@
 package plethora.core;
 
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.stream.IntStream;
 
-import processing.core.PApplet;
-import processing.core.PImage;
-import toxi.geom.*;
-import toxi.geom.mesh.TriangleMesh;
+import ch.fhnw.ether.controller.IController;
+import ch.fhnw.ether.scene.mesh.DefaultMesh;
+import ch.fhnw.ether.scene.mesh.IMesh;
+import ch.fhnw.ether.scene.mesh.IMesh.Primitive;
+import ch.fhnw.ether.scene.mesh.IMesh.Queue;
+import ch.fhnw.ether.scene.mesh.geometry.DefaultGeometry;
+import ch.fhnw.ether.scene.mesh.geometry.IGeometry;
+import ch.fhnw.ether.scene.mesh.geometry.IGeometry.IGeometryAttribute;
+import ch.fhnw.ether.scene.mesh.material.ColorMaterial;
+import ch.fhnw.ether.scene.mesh.material.IMaterial;
+import ch.fhnw.ether.scene.mesh.material.PointMaterial;
+import ch.fhnw.util.Pair;
+import ch.fhnw.util.color.RGBA;
+import ch.fhnw.util.math.MathUtilities;
+import ch.fhnw.util.math.Vec3;
+import ch.fhnw.util.math.geometry.BoundingBox;
 
 /**
  * Terrain Class based on a grid condition. It contains a data buffer that allows to store different layers of data
@@ -20,123 +36,170 @@ import toxi.geom.mesh.TriangleMesh;
  */
 
 public class Ple_Terrain {
+	
+	public static class CellCoordinate {
+		public final int x, y;
+		public CellCoordinate(int x, int y){
+			this.x = x;
+			this.y = y;
+		}
+	}
+	
+	public static class IndexBox {
+		public final int minX, minY, maxX, maxY;
+		public IndexBox(int minX, int minY, int maxX, int maxY){
+			this.minX = minX;
+			this.minY = minY;
+			this.maxX = maxX;
+			this.maxY = maxY;
+		}
+	}
+	
+	IController controller;
 
-	PApplet p5;
+	public final int COLS, ROWS;
+	public final float cellSizeX, cellSizeY;
 
-	public Vec3D [][] field;
-	public Ple_Tile[][] tiles;
-	public int COLS, ROWS;
-	public float cellSizeX, cellSizeY; 
-
-	public Vec3D origin;
-
-	public ArrayList<Integer[][]> buffers;
-
-	public boolean crop = false;
-	public float minCropX = 0;
-	public float minCropY = 0;
-	public float minCropZ = 0;
-	public float maxCropX = 0;
-	public float maxCropY = 0;
-	public float maxCropZ = 0;
-
-	public TriangleMesh mesh;
-
-	/**
-	 * Constructor: This is the information you need to provide to build the class. Usually called in the 
-	 * 'setup'. 
-	 * 
-	 * @param _p5
-	 * @param _origin
-	 * @param _COLS
-	 * @param _ROWS
-	 * @param _cellSizeX
-	 * @param _cellSizeY
-	 */
-
-	public Ple_Terrain(PApplet _p5,Vec3D _origin, int _COLS, int _ROWS, float _cellSizeX, float _cellSizeY){
-		p5 = _p5;
-
-		origin = _origin;
-
-		COLS = _COLS;
-		ROWS = _ROWS;
-
-		cellSizeX = _cellSizeX;
-		cellSizeY = _cellSizeY;
-
-		field = new Vec3D[COLS][ROWS];
-
-		mesh = new TriangleMesh();
-
-		init();
+	private final IMesh mesh;
+	private BoundingBox crop;
+	private IMesh points;
+	private final List<Integer>[][] zIndices;
+	private List<Integer>[][] vColors, linePointZIndices;
+	private IMesh lines;
+	
+	public Ple_Terrain(IController controller){
+		this(controller, new ColorMaterial(RGBA.WHITE), 100, 100, 1, 1);
+	}
+	
+	public static Ple_Terrain blankVertices(IController controller, int COLS, int ROWS, float cellSizeX, float cellSizeY){
+		float[] vcols = new float[COLS*ROWS*2*3*4];
+		for (int i = 0; i < vcols.length; i++) vcols[i] = 1.0f;
+		return new Ple_Terrain(controller, vcols, COLS, ROWS, cellSizeX, cellSizeY);
 	}
 
 	/**
-	 * initialize the class
+	 * Creates an IMesh the points of which are in arranged in a 2D grid. Their z and color value can be modified
+	 * using the according methods.
+	 * 
+	 * @param controller IController
+	 * @param COLS int
+	 * @param ROWS int
+	 * @param cellSizeX float
+	 * @param cellSizeY float
 	 */
-	public void init(){
-		for (int i = 0; i < COLS; i++) {
-			for (int j = 0; j < ROWS; j++) {
-				field[i][j] = new Vec3D(i*cellSizeX+origin.x, j *cellSizeY+origin.y,origin.z);
+
+	@SuppressWarnings("unchecked")
+	public Ple_Terrain(IController controller, IMaterial material, int COLS, int ROWS, float cellSizeX, float cellSizeY){
+		this.controller = controller;
+		this.COLS = COLS;
+		this.ROWS = ROWS;
+		this.cellSizeX = cellSizeX;
+		this.cellSizeY = cellSizeY;
+		zIndices = new LinkedList[ROWS][COLS];
+		defineGridIndices(zIndices, 3);
+		IGeometry g = DefaultGeometry.createV(Vec3.toArray(createTriangles()));
+		mesh = new DefaultMesh(Primitive.TRIANGLES, material, g);
+	}
+	
+	
+	@SuppressWarnings("unchecked")
+	public Ple_Terrain(IController controller, float[] vertexColors, int COLS, int ROWS, float cellSizeX, float cellSizeY){
+		this.controller = controller;
+		this.COLS = COLS;
+		this.ROWS = ROWS;
+		this.cellSizeX = cellSizeX;
+		this.cellSizeY = cellSizeY;
+		
+		zIndices = new LinkedList[ROWS][COLS];
+		vColors = new LinkedList[ROWS][COLS];
+		
+		defineGridIndices(zIndices, 3);
+		defineGridIndices(vColors, 4);
+		IGeometry g = DefaultGeometry.createVC(Vec3.toArray(createTriangles()), vertexColors);
+		mesh = new DefaultMesh(Primitive.TRIANGLES, new ColorMaterial(RGBA.WHITE), g);
+	}
+	
+	/**register the z-coordinates that belong to a grid node
+	 * @param i List&lt;Integer&gt;[y][x], indices per grid_node_[y][x], 2 in the corners and at the edges, else 6 
+	 * @param n coordinate count, typically 3
+	 */
+	private void defineGridIndices(List<Integer>[][] i, int n){
+		for (int y = 0; y < ROWS-1; y++){
+			for (int x = 0; x < COLS-1; x++){
+				// x, y
+				i[y][x]    .add((y     * 2 * COLS +  x    * 2)     * n + n - 1);
+				i[y][x]    .add((y     * 2 * COLS +  x    * 2 + 3) * n + n - 1);
+				// x + 1, y
+				i[y][x+1]  .add((y     * 2 * COLS + (x+1) * 2)     * n + n - 1);
+				// x, y + 1
+				i[y+1][x]  .add(((y+1) * 2 * COLS +  x    * 2 + 3) * n + n - 1);
+				// x + 1, y + 1
+				i[y+1][x+1].add(((y+1) * 2 * COLS + (x+1) * 2)     * n + n - 1);
+				i[y+1][x+1].add(((y+1) * 2 * COLS + (x+1) * 2 + 3) * n + n - 1);
 			}
 		}
 	}
 	
-
-	/**
-	 * initialize a collection of tiles (Ple_Tiles)
-	 */
-	public void initTiles(){
-
-		tiles = new Ple_Tile[COLS][ROWS];
-
-		for (int i = 0; i < COLS-1; i++) {
-			for (int j = 0; j < ROWS-1; j++) {
-
-				Vec3D p1 = field[i][j];
-				Vec3D p2 = field[i+1][j];
-				Vec3D p3 = field[i+1][j+1];
-				Vec3D p4 = field[i][j+1];
-
-				tiles[i][j] = new Ple_Tile(p5, p1,p2,p3,p4);
-
+	private List<Vec3> createTriangles(){
+		List<Vec3> triangles = new LinkedList<>();
+		for (int y = 0; y < ROWS-1; y++){
+			for (int x = 0; x < COLS-1; x++){
+				float X = x * cellSizeX;
+				float Y = y * cellSizeY;
+				// triangle 1, do not close it
+				// o
+				// |
+				// |
+				// o - - o
+				triangles.add(new Vec3(X, Y , 0));
+				triangles.add(new Vec3(X, Y + cellSizeY, 0));
+				triangles.add(new Vec3(X + cellSizeX, Y + cellSizeY, 0));
+				// triangle 2, do not close it
+				// o  o
+				//  \ |
+				//   \|
+				//    o
+				triangles.add(new Vec3(X, Y, 0));
+				triangles.add(new Vec3(X + cellSizeX, Y + cellSizeY, 0));
+				triangles.add(new Vec3(X + cellSizeX, Y, 0));
 			}
 		}
+		return triangles;
 	}
-
-
-	/**
-	 * update Tiles locations based on terrain Locations
+	
+	/**register the z-coordinates that belong to a line grid node
+	 * @param i List&lt;Integer&gt;[y][x], indices per grid_node_[y][x], 2 in the corners, 3 at the edges, else 4 
+	 * @param n coordinate count, typically 3
 	 */
-	public void updateTiles(){
-		for (int i = 0; i < COLS-1; i++) {
-			for (int j = 0; j < ROWS-1; j++) {
-
-				Vec3D p1 = field[i][j];
-				Vec3D p2 = field[i+1][j];
-				Vec3D p3 = field[i+1][j+1];
-				Vec3D p4 = field[i][j+1];
-
-				tiles[i][j].a = p1;
-				tiles[i][j].b = p2;
-				tiles[i][j].c = p3;
-				tiles[i][j].d = p4;	
+	private List<Vec3> createLines(List<Integer>[][] i, int n){
+		float[] d = mesh.getGeometry().getData()[0];
+		List<Integer>[][] z = zIndices;
+		List<Vec3> lines = new LinkedList<>();
+		for (int y = 0; y < ROWS; y++){
+			for (int x = 0; x < COLS; x++){
+				boolean lowerEnd = y == ROWS-1, rightEnd = x == COLS-1; 
+				if (lowerEnd && rightEnd) break;
+				if (!rightEnd){
+					// x, y
+					i[y][x]  .add((y     * 2 * COLS + x     * 2)     * n + n - 1);
+					// x + 1, y
+					i[y][x+1].add((y     * 2 * COLS + (x+1) * 2)     * n + n - 1);
+					lines.add(new Vec3(x    *cellSizeX, y*cellSizeY, d[z[y][x  ].get(0)]));
+					lines.add(new Vec3((x+1)*cellSizeX, y*cellSizeY, d[z[y][x+1].get(0)]));
+				}
+				if (!lowerEnd){
+					// x, y
+					i[y][x]  .add((y     * 2 * COLS + x     * 2 + 2) * n + n - 1);
+					// x, y + 1
+					i[y+1][x].add(((y+1) * 2 * COLS + x     * 2 + 2) * n + n - 1);
+					lines.add(new Vec3(x    *cellSizeX, y*cellSizeY, d[z[y][x  ].get(0)]));
+					lines.add(new Vec3(x*cellSizeX, (y+1)*cellSizeY, d[z[y+1][x].get(0)]));
+				}
 			}
 		}
+		return lines;
 	}
-
-	/**
-	 * display tiles polygons
-	 */
-	public void displayTiles(){
-		for (int i = 0; i < COLS-1; i++) {
-			for (int j = 0; j < ROWS-1; j++) {
-				tiles[i][j].drawPoly();	
-			}
-		}
-	}
-
+	
 	/**
 	 * define cropping thresholds
 	 * @param cX
@@ -147,13 +210,8 @@ public class Ple_Terrain {
 	 * @param cZ2
 	 */
 	public void crop(float cX, float cY, float cZ, float cX2, float cY2, float cZ2){
-		minCropX = cX;
-		minCropY = cY;
-		minCropZ = cZ;
-
-		maxCropX = cX2;
-		maxCropY = cY2;
-		maxCropZ = cZ2;
+		crop = new BoundingBox();
+		crop.add(new float[]{cX, cY, cZ, cX2, cY2, cZ2});
 	}
 
 
@@ -163,9 +221,54 @@ public class Ple_Terrain {
 	 * @param row
 	 * @param z
 	 */
-	public void setPointZ(int col, int row, float z){
-		if(col < COLS && row < ROWS && col > -1 && row > -1){
-			field[col][row].z = z;
+	public void setPointZ(int row, int col, float z){
+		if (MathUtilities.isInRange(col, 0, COLS - 1) &&
+			MathUtilities.isInRange(row, 0, ROWS - 1)){
+			setPointZ_(col, row, z);
+		}
+	}
+	
+	private void setPointZ_(int row, int col, float z){
+		float[] v = mesh.getGeometry().getData()[0];
+		for (int i: zIndices[row][col]) v[i] = z;
+		
+		if (points != null){
+			float[] d = points.getGeometry().getData()[0];
+			d[(row*COLS+col)*3+2] = z;
+		}
+		if (lines != null){
+			float[] d = lines.getGeometry().getData()[0];
+			for(int i: linePointZIndices[row][col]) d[i] = z;
+		}
+	}
+	
+	public void updateBoundingBoxPointZ(int row, int col, float z){
+		if (crop != null) {
+			float x = col*cellSizeX;
+			float y = row*cellSizeY;
+			if (crop.contains2D(x, y))
+				crop.add(x, y, z);
+		}
+	}
+	
+	public void setPointColor(int row, int col, RGBA color){
+		IGeometryAttribute[] attributes = mesh.getGeometry().getAttributes();
+		int colorMapIndex = Arrays.asList(attributes).indexOf(DefaultGeometry.COLOR_ARRAY);
+		if (colorMapIndex == -1) 
+			throw new IllegalStateException("Must initialize terrain with vertex colors to set point colors");
+		if (MathUtilities.isInRange(col, 0, COLS - 1) &&
+			MathUtilities.isInRange(row, 0, ROWS - 1)){
+			setPointColor_(row, col, color, colorMapIndex);
+		}
+	}
+	
+	private void setPointColor_(int row, int col, RGBA color, int colorMapIndex){
+		float[] vcols = mesh.getGeometry().getData()[colorMapIndex];
+		for (int i: vColors[row][col]) {
+			vcols[i-3] = color.r;
+			vcols[i-2] = color.g;
+			vcols[i-1] = color.b;
+			vcols[i] = color.a;
 		}
 	}
 
@@ -175,56 +278,83 @@ public class Ple_Terrain {
 	 * @param row
 	 * @param z
 	 */
-	public void addPointZ(int col, int row, float z){
-		if(col < COLS && row < ROWS && col > -1 && row > -1){
-			field[col][row].z += z;
+	public void addPointZ(int row, int col, float z){
+		if (MathUtilities.isInRange(col, 0, COLS - 1) &&
+			MathUtilities.isInRange(row, 0, ROWS - 1)){
+			addPointZ_(col, row, z);
 		}
 	}
-
-	/**
-	 * activate / de-activate cropping 
-	 * @param c
-	 */
-	public void setCropActive(boolean c){
-		crop = c;
-	}
-
-	/**
-	 * set the location of each point of the field based on a vector array
-	 * @param pts
-	 * @param numCols
-	 * @param numRows
-	 */
-	public void setLocFromData(Vec3D [] pts){
-		int countX = 0;
-		int countY = 0;
-		for (int i = 0; i < pts.length; i +=1) {
-			//float c = map (pts[i].z, 10, 50, 0, 255);
-			//stroke(c, 90);
-			//strokeWeight(0.2);
-			//if(pts[i].x < 300 && y > 100){
-			//point(pts[i].x, pts[i].y, pts[i].z); 
-
-			field[countX][countY] = pts [i].copy();
-			countX ++;
-			if(countX == COLS){
-				countY++;
-				countX = 0;
-			}
+	
+	private void addPointZ_(int row, int col, float z){
+		for (int i: zIndices[row][col])
+			mesh.getGeometry().getData()[0][i] += z;
+		if (points != null){
+			float[] d = points.getGeometry().getData()[0];
+			d[(row*COLS+col)*3+2] += z;
+		}
+		if (lines != null){
+			float[] d = lines.getGeometry().getData()[0];
+			for(int i: linePointZIndices[row][col]) d[i] += z;
 		}
 	}
-
-	/**
-	 * display points of the field
-	 */
-	public void display(){
-		for (int i = 0; i < COLS; i++) {
-			for (int j = 0; j < ROWS; j++) {
-				if(checkCrop(field[i][j])){
-					vPt(field[i][j]);
+	
+	public boolean hasCrop(){
+		return crop != null;
+	}
+	
+	public BoundingBox releaseCrop(){
+		BoundingBox b = crop;
+		crop = null;
+		return b;
+	}
+	
+	
+	@SuppressWarnings("unchecked")
+	public Pair<Integer, Integer>[][] getCroppedIndices(){
+		IndexBox b = getIndexBox();
+		if ((b.minY < ROWS && b.minX < COLS) || (b.maxY < ROWS && b.maxX < COLS))
+			return IntStream.rangeClosed(b.minY, b.maxY)
+							.mapToObj(y -> IntStream.rangeClosed(b.minX, b.maxX)
+									.mapToObj(x -> new Pair<Integer, Integer>(x, y))
+									.toArray())
+							.toArray(Pair[][]::new);
+		return new Pair[0][0];
+	}
+	
+	public IndexBox getIndexBox(){
+		return getIndexBox(crop.getMinX(), crop.getMinY(), crop.getMaxX(), crop.getMaxY());
+	}
+	
+	public IndexBox getIndexBox(float fMinX, float fMinY, float fMaxX, float fMaxY){
+		int minX = Math.max((int) (fMinX/cellSizeX), 0);
+		int maxX = Math.min((int) Math.ceil(fMaxX/cellSizeX), COLS);
+		int minY = Math.max((int) (fMinY/cellSizeY), 0);
+		int maxY = Math.min((int) Math.ceil(fMaxY/cellSizeY), ROWS);
+		return new IndexBox(minX, minY, maxX, maxY);
+	}
+	
+	public IMesh getPoints(){
+		if (points == null){
+			float[] d = mesh.getGeometry().getData()[0];
+			float[] p = new float[ROWS*COLS*3];
+			int c = 0;
+			for (int y = 0; y < ROWS; y++){
+				for (int x = 0; x < COLS; x++){
+					int i = zIndices[y][x].get(0);
+					p[c++] = d[i-2];
+					p[c++] = d[i-1];
+					p[c++] = d[i];
 				}
 			}
+			points = new DefaultMesh(Primitive.POINTS, new PointMaterial(RGBA.BLUE, 10), DefaultGeometry.createV(p), Queue.OVERLAY);
 		}
+		return points;
+	}
+	
+	public Vec3 getPoint(int row, int col){
+		float[] d = mesh.getGeometry().getData()[0];
+		int i = zIndices[row][col].get(0);
+		return new Vec3(d[i-2], d[i-1], d[i]);
 	}
 
 	/**
@@ -232,111 +362,46 @@ public class Ple_Terrain {
 	 * @param v
 	 * @return
 	 */
-	public boolean checkCrop (Vec3D v){
-		boolean result = true;
-		if(v.x < minCropX || v.y < minCropY || v.z < minCropZ || v.x > maxCropX || v.y > maxCropY || v.z > maxCropZ ){
-			if(crop){
-				result = false;
-			}
-		}else{
-			result = true;
-		}
-		return result;
+	public boolean checkCrop (Vec3 v){
+		return crop.contains(v);
 	}
-
-	/**
-	 * add a noise value to the heights
-	 * @param minHeight
-	 * @param maxHeight
-	 */
-	public void noiseHeight(float minHeight, float maxHeight){
-		p5.noiseSeed((int)p5.random(10000));
-		float xoff = 0;
-		for (int i = 0; i < COLS; i++) {
-			float yoff = 0;
-			for (int j = 0; j < ROWS; j++) {
-				float height = PApplet.map(p5.noise(xoff,yoff),0,1,minHeight,maxHeight);
-				field[i][j].z += height;
-				yoff += 0.1;
+	
+	public void setZNoise(float zMin, float zMax){
+		forEachNode((x, y) -> setPointZ_(y, x, MathUtilities.random(zMin, zMax)));
+	}
+	
+	public void addZNoise(float zMin, float zMax){
+		forEachNode((x, y) -> addPointZ_(y, x, MathUtilities.random(zMin, zMax)));
+	}
+	
+	public void forEachNode(BiConsumer<Integer, Integer> bc){
+		int yTop = ROWS, xTop = COLS, y = 0, x = 0;
+		if (crop != null){
+			IndexBox b = getIndexBox();
+			x = b.minX;
+			y = b.minY;
+			xTop = b.maxX;
+			yTop = b.maxY;
+		}
+		for (; y < yTop; y++){
+			for (; x < xTop; x++){
+				bc.accept(x, y);
 			}
-			xoff += 0.1;
 		}
 	}
-
-	/**
-	 * draw lines between points (vertical, horizontal or diagonal)
-	 * @param vertical
-	 * @param horizontal
-	 * @param diagonal
-	 */
-	public void drawLines(boolean vertical, boolean horizontal, boolean diagonal){
-		for (int i = 0; i < COLS; i++) {
-			for (int j = 0; j < ROWS; j++) {
-
-				int nX = 1;
-				int nY = 1;
-				if(i == COLS-1)nX = 0;
-				if(j == ROWS-1)nY = 0;
-
-				Vec3D p1 = field[i][j];
-				Vec3D p2 = field[i+nX][j];
-				Vec3D p3 = field[i+nX][j+nY];
-				Vec3D p4 = field[i][j+nY];
-
-				if(checkCrop(field[i][j])){
-
-					if(horizontal)vLine(p1,p2);
-
-					if(vertical)vLine(p1,p4);
-
-					if(diagonal)vLine(p1,p3);
-
-				}		
-			}
-		}
-
-
+	
+	public IMesh getLines(){
+		return getLines(new ColorMaterial(RGBA.BLACK));
 	}
-
-	/**
-	 * draw polygons with the data of a data-map (2 dimentional array)
-	 * @param data
-	 * @param from1
-	 * @param to1
-	 * @param from2
-	 * @param to2
-	 */
-	public void drawDataMap(float [][] data, float from1, float to1, float from2, float to2){
-		for (int i = 0; i < COLS-1; i++) {
-			for (int j = 0; j < ROWS-1; j++) {
-				Vec3D p1 = field[i][j];
-				Vec3D p2 = field[i+1][j];
-				Vec3D p3 = field[i+1][j+1];
-				Vec3D p4 = field[i][j+1];
-
-				int c = (int) PApplet.map(data[i][j], from1, to1, from2, to2);
-				//int c = (int)data[i][j];		
-				//PApplet.constrain(c, 10, 255);
-				if(data[i][j] < 0) data[i][j] = 0;
-				if(data[i][j] > 255) data[i][j] = 255;
-
-				p5.noStroke();
-				p5.fill(c);
-				p5.beginShape();
-				vex(p1);
-				vex(p2);
-				vex(p3);
-				//vex(p4);	
-				p5.endShape();	
-
-				p5.beginShape();
-				vex(p1);
-				//vex(p2);
-				vex(p3);
-				vex(p4);	
-				p5.endShape();	
-			}
+	
+	@SuppressWarnings("unchecked")
+	public IMesh getLines(IMaterial material){
+		if (lines == null){
+			linePointZIndices = new List[ROWS][COLS];
+			IGeometry g = DefaultGeometry.createV(Vec3.toArray(createLines(linePointZIndices, 3)));
+			lines = new DefaultMesh(Primitive.LINES, material, g, IMesh.Queue.OVERLAY, IMesh.NO_FLAGS);
 		}
+		return lines;
 	}
 
 	/**
@@ -364,140 +429,23 @@ public class Ple_Terrain {
 
 		return data;
 	}
-
-
-	/**
-	 * display each node (Ple_Node)
-	 * @param index
-	 */
-	public void displayIndexArrayList(ArrayList index){
-		for(int i = 0; i < index.size(); i++){
-			Ple_Node node = (Ple_Node) index.get(i);
-			vPt(node.loc);
-
-		}
-	}
-
-
-	/**
-	 * exports the mesh of the terrain
-	 * @param name
-	 * @param obj
-	 * @param stl
-	 */
-	public void exportMesh(String name, boolean obj, boolean stl){
-		for (int i = 0; i < COLS-2; i++) {
-			for (int j = 0; j < ROWS-2; j++) {
-				Vec3D p1 = field[i][j];
-				Vec3D p2 = field[i+1][j];
-				Vec3D p3 = field[i+1][j+1];
-				Vec3D p4 = field[i][j+1];
-
-				mesh.addFace(p1, p2, p3);
-				mesh.addFace(p1, p3, p4);
-			}
-		}
-		if(stl){
-			mesh.saveAsSTL(p5.sketchPath(mesh.name + name +".stl"));
-		}
-		if(obj){
-			mesh.saveAsOBJ(p5.sketchPath(mesh.name + name + ".obj"));
-		}
-		mesh.clear();
-	}
-
-	/**
-	 * vertex from a vector
-	 * @param v
-	 */
-	public void vex(Vec3D v){
-		p5.vertex(v.x,v.y,v.z);
-	}
-
-	/**
-	 * create a vector field from sin/cosine values - not yet implemented
-	 * @param data
-	 * @param from
-	 * @param to
-	 * @return
-	 */
-	public Vec3D [][] vectorField2D(float [][] data, float from, float to){
-
-		Vec3D [][]vecField = new Vec3D[COLS-1][ROWS-1];
-
-		for (int i = 0; i < COLS-1; i++) {
-			for (int j = 0; j < ROWS-1; j++) {
-				float value = PApplet.map(data[i][j], from, to, 0, PApplet.TWO_PI);
-				vecField[i][j] =  new Vec3D(PApplet.cos(value),PApplet.sin(value),0);
-			}
-		}
-		return vecField;
-	}
-
-
-	/**
-	 * generate a data-map from an image (black and white preferably)
-	 * @param image
-	 */
-	public float[][] loadImageToBuffer(String image){
-		float [][] info = new float[COLS][ROWS];
-		PImage im = p5.loadImage(image);
-
-		int w = im.width;
-		int h = im.height;
-
-		for (int i = 0; i < COLS; i++) {
-			for (int j = 0; j < ROWS; j++) {
-
-				int xLoc = (int) PApplet.map(i, 0, COLS-1, 0, w-1);
-				int yLoc = (int) PApplet.map(j, 0, ROWS-1, 0, h-1);
-
-				float c =  p5.red(im.get(xLoc,yLoc));
-				info[i][j] = c;
-			}
-		}
-
-		//buffers.add(info);
-		return info;
-	}
+	
+	// TODO add image as texture - why loading data map from / Vertex colors from image?
 
 	/**
 	 * create heights from data-map
-	 * @param bufferId
-	 * @param min
-	 * @param max
+	 * @param data float[][]
+	 * @param min float
+	 * @param max float
 	 */
 	public void loadBufferasHeight(float [][] data, float min, float max){
-
+		float[] d = mesh.getGeometry().getData()[0];
 		for (int i = 0; i < COLS; i++) {
 			for (int j = 0; j < ROWS; j++) {
-				//float col = p5.red(data[i][j]);
-				float height = PApplet.map(data[i][j], 0, 255, min, max);
-				field[i][j].z = height;
+				float height = MathUtilities.map(data[i][j], 0, 255, min, max);
+				for(int idx: zIndices[j][i]) d[idx] = height;
 			}
 		}
-	}
-
-	/**
-	 * draw a vector field
-	 * missing * (add arrows)
-	 * @param vecField
-	 * @param len
-	 */
-	public void drawVectorField(Vec3D [][] vecField, float len){
-
-		for (int i = 0; i < COLS-1; i++) {
-			for (int j = 0; j < ROWS-1; j++) {
-
-				Vec3D v = vecField[i][j].copy();
-				v.normalize();
-				v.scaleSelf(len);
-				Vec3D vPlusLoc = field[i][j].add(v);
-
-				vLine(field[i][j],vPlusLoc);				
-			}
-		}
-
 	}
 
 	/**
@@ -508,30 +456,22 @@ public class Ple_Terrain {
 	 */
 	public float[][] calcSteepnessMap(){
 
-		float [][] fieldAngles = new float[COLS-1][ROWS-1];
-
+		float[][] fieldAngles = new float[COLS-1][ROWS-1];
+		float[] d = mesh.getGeometry().getData()[0];
 		for (int i = 0; i < COLS-1; i++) {
 			for (int j = 0; j < ROWS-1; j++) {
-				Vec3D p1 = field[i][j];
-				//Vec3D p2 = field[i+1][j];
-				Vec3D p3 = field[i+1][j+1];
-				//Vec3D p4 = field[i][j+1];
+				int I = zIndices[i][j].get(0);
+				Vec3 p1 = new Vec3(d[I-2], d[I-1], d[I]);
+				int J = zIndices[i+1][j+1].get(0);
+				Vec3 p3 = new Vec3(d[J-2], d[J-1], d[J]);
 
-				fieldAngles[i][j] = calcSteepnessAngle(p1,p3);
+				fieldAngles[i][j] = pitchFromAToB(p1,p3);
 
 			}
 		}
 		return fieldAngles;
 	}
 
-	/**
-	 * draw a line from 2 vectors
-	 * @param v1
-	 * @param v2
-	 */
-	public void vLine(Vec3D v1, Vec3D v2){
-		p5.line(v1.x,v1.y,v1.z, v2.x,v2.y,v2.z);
-	}
 
 	/**
 	 * calculates angles of inclination
@@ -539,87 +479,19 @@ public class Ple_Terrain {
 	 * @param b
 	 * @return
 	 */
-	public float calcSteepnessAngle(Vec3D a, Vec3D b){
-		float ang = 0;
-
-		Vec3D cflat = new Vec3D(b.x,b.y,a.z);
-
-		Vec3D v1 = b.sub(a);
-		v1.normalize();
-		Vec3D v2 = cflat.sub(a);
-		v2.normalize();
-
-		//p5.stroke(255,0,0);
-		//vLine(a,c);
-
-		ang = v1.angleBetween(v2);
-		return ang;
+	public float pitchFromAToB(Vec3 a, Vec3 b){
+		return b.subtract(a).angle(new Vec3(b.x,b.y, a.z).subtract(a));
 	}
 
-	/**
-	 * returns the closest terrain node from a given vector
-	 * @param v
-	 * @return
-	 */
-	public Vec3D closestNode(Vec3D v){
-
-		float cloDist = 1000000;
-		int cloIdc = 0;
-		int cloIdr = 0;
-
-		for (int i = 0; i < COLS; i ++){
-			for (int j = 0; j < ROWS; j ++){
-
-				float d = field[i][j].distanceTo(v);
-				if(d < cloDist && d > 0){
-					cloDist = d;
-					cloIdc = i;
-					cloIdr = j;
-				}
-			}
-		}
-		return field[cloIdc][cloIdr].copy();
+	public CellCoordinate getCellIndex(Vec3 v){
+		// vector in terrain coordinate space
+		Vec3 tv = v.subtract(mesh.getPosition());
+		// constrain x and y indices to COLS/ROWS
+		int x = (int) MathUtilities.clamp(tv.x / cellSizeX, 0, COLS-1);
+		int y = (int) MathUtilities.clamp(tv.y / cellSizeY, 0, ROWS-1);
+		return new CellCoordinate(x, y);
 	}
-
-	/**
-	 * returns the location on the grid (projected down to the terrain on average location)
-	 * @param v
-	 * @return
-	 */
-	public Vec3D getLocInGrid(Vec3D v) {
-		int i = xLocInGrid(v);
-		int j = yLocInGrid(v);
-		return field[i][j].copy();
-	}
-
-	/**
-	 * get the location in the grid in X
-	 * @param v
-	 * @return
-	 */
-	public int xLocInGrid (Vec3D v){
-		int i = (int) PApplet.constrain((v.x-origin.x)/cellSizeX,0,COLS-1);
-		return i;
-	}
-
-	/**
-	 * get the location on  the grid in Y
-	 * @param v
-	 * @return
-	 */
-	public int yLocInGrid (Vec3D v){
-		int j = (int) PApplet.constrain((v.y-origin.y)/cellSizeY,0,ROWS-1);
-		return j;
-	}
-
-	/**
-	 * draw point from a vector
-	 * @param v
-	 */
-	public void vPt(Vec3D v){
-		p5.point(v.x,v.y,v.z);
-	}
-
-
+	
+	
 
 }

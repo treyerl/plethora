@@ -1,12 +1,15 @@
 package plethora.core;
 
+import ch.fhnw.ether.controller.IController;
+import ch.fhnw.ether.scene.mesh.MeshUtilities;
+import ch.fhnw.util.math.Vec3;
 import processing.core.PApplet;
 import toxi.geom.Vec3D;
 import toxi.geom.mesh.TriangleMesh;
 
 public class Ple_Tile {
 
-	PApplet p5;
+	IController controller;
 
 	public Vec3D a;
 	public Vec3D b;
@@ -34,8 +37,8 @@ public class Ple_Tile {
 	
 	TriangleMesh tileMesh = new TriangleMesh("tile");
 
-	public Ple_Tile(PApplet _p5, Vec3D _a, Vec3D _b, Vec3D _c, Vec3D _d){
-		p5 = _p5;
+	public Ple_Tile(IController controller, Vec3D _a, Vec3D _b, Vec3D _c, Vec3D _d){
+		this.controller = controller;
 
 		a = _a;
 		b = _b;
@@ -260,7 +263,7 @@ public class Ple_Tile {
 	 * @param v3
 	 * @param v4
 	 */
-	public void drawPoly(Vec3D v1, Vec3D v2, Vec3D v3, Vec3D v4){
+	public void drawPoly(Vec3 v1, Vec3 v2, Vec3 v3, Vec3 v4){
 		p5.beginShape();
 		vex(v1);
 		vex(v2);
@@ -290,16 +293,4 @@ public class Ple_Tile {
 		vex(a);
 		p5.endShape();
 	}
-
-	/**
-	 * 
-	 * @param v
-	 */
-	public void vex(Vec3D v){
-		p5.vertex(v.x, v.y, v.z);
-	}
-
-
-
-
 }

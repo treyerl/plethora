@@ -1,16 +1,19 @@
 package plethora.core;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.Iterator;
 
-import processing.core.PApplet;
-import processing.core.PImage;
+import ch.fhnw.ether.controller.IController;
+import ch.fhnw.ether.image.GLGPUImage;
+import ch.fhnw.ether.image.IGPUImage;
 import toxi.geom.Vec3D;
 import toxi.util.FileSequenceDescriptor;
 import toxi.util.FileUtils;
 
 public class Ple_Image {
 
-	PApplet p5;
+	IController controller;
 	FileSequenceDescriptor fsd;
 	Iterator <String> images;
 
@@ -24,12 +27,12 @@ public class Ple_Image {
 
 	Vec3D loc = new Vec3D();
 
-	PImage img;
+	IGPUImage img;
 	
 	int alpha = 255;
 
-	public Ple_Image(PApplet _p5, String _fPath, Vec3D _loc, int _vCol, int _vRow, float _iScale){
-		p5 = _p5;
+	public Ple_Image(IController controller, String _fPath, Vec3D _loc, int _vCol, int _vRow, float _iScale) throws IOException{
+		this.controller = controller;
 
 		fPath = _fPath;
 		loc = _loc;
@@ -37,19 +40,14 @@ public class Ple_Image {
 		vRow = _vRow;
 		iScale = _iScale;
 
-
-		fsd = FileUtils.getFileSequenceDescriptorFor(p5.dataPath("") + fPath);
-		images=fsd.iterator();
-
-		String imgPath=(String)images.next();
-		img = p5.loadImage(imgPath);
+		img = IGPUImage.read(new File(_fPath));
 	}
 
 	/**
 	 * This function will call both displayPoints and updateImageSeq, is a shortcut to make functional.
 	 */
 	public void run() {
-		updateImageSeq();
+//		updateImageSeq();
 		displayPoints(3,100,0,0,0);
 	}
 	
@@ -58,18 +56,18 @@ public class Ple_Image {
 	}
 
 
-	/**
-	 * This Function allows to update the image sequence. This will make the videos to Play.
-	 */
-	public void updateImageSeq() {
-		if (!images.hasNext()) {
-			images=fsd.iterator();
-		}
-
-		String imgPath = (String)images.next();
-		img = p5.loadImage(imgPath);
-
-	}
+//	/**
+//	 * This Function allows to update the image sequence. This will make the videos to Play.
+//	 */
+//	public void updateImageSeq() {
+//		if (!images.hasNext()) {
+//			images=fsd.iterator();
+//		}
+//
+//		String imgPath = (String)images.next();
+//		img = p5.loadImage(imgPath);
+//
+//	}
 
 	/**
 	 * *K

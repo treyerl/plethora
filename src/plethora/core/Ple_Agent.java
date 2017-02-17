@@ -8,8 +8,17 @@
 package plethora.core;
 
 import java.util.ArrayList;
-import toxi.geom.*;
-import processing.core.*;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+
+import ch.fhnw.ether.controller.IController;
+import ch.fhnw.ether.controller.event.IEventScheduler.IAction;
+import ch.fhnw.util.Pair;
+import ch.fhnw.util.math.MathUtilities;
+import ch.fhnw.util.math.Vec3;
+import ch.fhnw.util.math.geometry.LineString;
+import plethora.core.Ple_Terrain.IndexBox;
 
 /**
  * This is an Agent Class. It works based on steering behaviors by Craig Reynolds implemented by Daniel Shiffman 
@@ -26,30 +35,31 @@ import processing.core.*;
 
 public class Ple_Agent {
 
-	PApplet p5;
+	private Vec3 loc;
+	private Vec3 vel;
+	private Vec3 acc;
 
-	public Vec3D loc;
-	public Vec3D vel;
-	public Vec3D acc;
+	private Vec3 anchor;
+	private boolean lock;
+	
+	private Vec3 v;
+//	private float vx,vy,vz;
 
-	public Vec3D anchor;
-	public boolean lock;
+	private float maxspeed = 4;
+	private float maxforce = 0.05f;
 
-	public float vx,vy,vz;
+//	private boolean showSep = false;
+//	private boolean showAli = false;
+//	private boolean showCoh = false;
 
-	public float maxspeed = 4;
-	public float maxforce = 0.05f;
+	private Vec3 [] tail = new Vec3 [1];
+	private Vec3 [] velTail = new Vec3 [1];
 
-	public boolean showSep = false;
-	public boolean showAli = false;
-	public boolean showCoh = false;
+	private float wandertheta = 0.0f;
 
-	public Vec3D [] tail = new Vec3D [1];
-	public Vec3D [] velTail = new Vec3D [1];
-
-	public float wandertheta = 0.0f;
-
-	public ArrayList <Vec3D> trail;
+	private List <Vec3> trail;
+	
+	private IController controller;
 
 
 	/**
@@ -60,16 +70,16 @@ public class Ple_Agent {
 	 * @param _p5
 	 * @param _loc
 	 */
-	public Ple_Agent(PApplet _p5, Vec3D _loc){
+	public Ple_Agent(IController controller, Vec3 _loc){
+		this.controller = controller;
 		loc = _loc;	
-		p5 = _p5;
 
-		vel = new Vec3D(0,0,0);
-		acc = new Vec3D();	
+		vel = new Vec3(0,0,0);
+		acc = new Vec3(0,0,0);	
 
-		trail = new ArrayList<Vec3D>();
+		trail = new LinkedList<Vec3>();
 
-		anchor = new Vec3D();
+		anchor = new Vec3(0,0,0);
 		lock = false;
 
 	}
@@ -82,12 +92,12 @@ public class Ple_Agent {
 	 */
 	public void update() {
 		// Update velocity
-		vel.addSelf(acc);
+		vel = vel.add(acc);
 		// Limit speed
-		vel.limit(maxspeed);
-		loc.addSelf(vel);
-		// Reset accelertion to 0 each cycle
-		acc.clear();
+		vel = vel.normalize().scale(maxspeed);
+		loc = loc.add(vel);
+		// Reset accelertion to 0 each cycle; really??
+		acc = new Vec3(0,0,0);
 	}
 
 	/**
@@ -95,16 +105,15 @@ public class Ple_Agent {
 	 * @param zValue - Value for location z.
 	 */
 	public void flatten (float zValue){
-		loc.z = zValue;
-		//vel.z = zValue;
+		loc = new Vec3(loc.x, loc.y, zValue);
 	}
 
 	/**
 	 * Allows to flatten the velocity in order to get a 2D movement.
 	 */
 	public void flatVel(){
-		acc = new Vec3D(acc.x,acc.y,0);
-		vel = new Vec3D(vel.x,vel.y,0);
+		acc = new Vec3(acc.x,acc.y,0);
+		vel = new Vec3(vel.x,vel.y,0);
 	}
 
 	/**
@@ -113,8 +122,7 @@ public class Ple_Agent {
 	 */
 	public void updateSimple() {
 		// Limit speed
-		vel.limit(maxspeed);
-		loc.addSelf(vel);
+		loc = loc.add(vel.normalize().scale(maxspeed));
 	}
 
 
@@ -127,29 +135,23 @@ public class Ple_Agent {
 	 * @param maxAngle - maximum angle
 	 * @return
 	 */
-	public ArrayList terrainPointsInRange(Ple_Terrain ter, float minRange,  float maxRange,  float minAngle,  float maxAngle){
+	public List<Vec3> terrainPointsInRange(Ple_Terrain ter, float minRange,  float maxRange,  float minAngle,  float maxAngle){
 
-		ArrayList pts = new ArrayList();
+		List<Vec3> pts = new LinkedList<>();
 
 		for (int i = 0; i < ter.COLS; i++) {
 			for (int j = 0; j < ter.ROWS; j++) {
 
-				Vec3D ptLoc = new Vec3D(ter.field[i][j].x,ter.field[i][j].y,loc.z);
+				Vec3 ptLoc = ter.getPoint(j, i);
 
-
-				float d = loc.distanceTo(ptLoc);
-				Vec3D dif = ptLoc.sub(loc);
-				dif.normalize();
-
-				Vec3D v = vel.copy();
-				v.normalize();
-
-				float angle = p5.degrees(v.angleBetween(dif));
+				float d = loc.distance(ptLoc);
+				Vec3 dif = ptLoc.subtract(loc).normalize();
+				float angle = MathUtilities.RADIANS_TO_DEGREES * vel.normalize().angle(dif);
 
 				if(d < maxRange && d > minRange ) {
 					if(angle < maxAngle && angle > minAngle) {
 
-						pts.add(ter.field[i][j]);
+						pts.add(ptLoc);
 					}
 				}
 
@@ -163,40 +165,26 @@ public class Ple_Agent {
 	 * This method evaluates points in range and associates the data map with their location.
 	 * It returns an arrayList of Ple_Nodes with both location and data.
 	 * @param ter - Terrain of reference
-	 * @param dataMap - 2 dimentional array that contains the info to be associated to the points.
+	 * @param dataMap - 2 dimensional array that contains the info to be associated to the points.
 	 * @param minRange - minimum distance
 	 * @param maxRange - maximum distance
 	 * @param minAngle - minimum angle
 	 * @param maxAngle - maximum angle
 	 * @return
 	 */
-	public ArrayList terrainIndexInRange(Ple_Terrain ter, float [][] dataMap, float minRange,  float maxRange,  float minAngle,  float maxAngle){
-
-		ArrayList pts = new ArrayList();
-
-		for (int i = 0; i < ter.COLS; i++) {
-			for (int j = 0; j < ter.ROWS; j++) {
-
-				Vec3D ptLoc = new Vec3D(ter.field[i][j].x,ter.field[i][j].y,loc.z);
-
-				float d = loc.distanceTo(ptLoc);
-				Vec3D dif = ptLoc.sub(loc);
-				dif.normalize();
-
-				Vec3D v = vel.copy();
-				v.normalize();
-
-				float angle = p5.degrees(v.angleBetween(dif));
+	public List<Pair<Pair<Integer, Integer>, Float>> terrainIndexInRange(Ple_Terrain ter, float [][] dataMap, float minRange,  float maxRange,  float minAngle,  float maxAngle){
+		List<Pair<Pair<Integer, Integer>, Float>> pts = new LinkedList<>();
+		IndexBox b = ter.getIndexBox(loc.x - maxRange, loc.y - maxRange, loc.x + maxRange, loc.y + maxRange);
+		for (int i = b.minX; i < b.maxX; i++) {
+			for (int j = b.minY; j < b.maxY; j++) {
+				Vec3 ptLoc = ter.getPoint(j, i);
+				float d = loc.distance(ptLoc);
+				Vec3 dir = ptLoc.subtract(loc).normalize();
+				float angle = MathUtilities.RADIANS_TO_DEGREES * vel.normalize().angle(dir);
 
 				if(d < maxRange && d > minRange ) {
 					if(angle < maxAngle && angle > minAngle) {
-
-						Ple_Node pn = new Ple_Node(ter.field[i][j]);
-						pn.setIndex(i,j);
-
-						pn.setData(dataMap[i][j]);
-
-						pts.add(pn);
+						pts.add(new Pair<>(new Pair<>(i,j), dataMap[i][j]));
 					}
 				}
 			}
@@ -205,40 +193,12 @@ public class Ple_Agent {
 	}
 
 	/**
-	 * Returns the location of the node with the highest data.
-	 * @param index
-	 * @return
-	 */
-	public Vec3D getPointWithHighestData(ArrayList index){
-		Vec3D sum = new Vec3D();
-		int count = 0;
-		for(int i = 0; i < index.size(); i++){
-
-			Ple_Node node = (Ple_Node) index.get(i);
-
-			float pheAmount = p5.map(node.data, 0,255,0,1);
-			Vec3D dif = node.loc.sub(loc);
-			//dif.normalize();
-			dif.scaleSelf(pheAmount);
-
-			sum.addSelf(dif);
-			count++;
-
-		}
-		if(count > 0){
-			sum.scaleSelf(1.0f/count);
-		}
-		sum.addSelf(loc);
-		return sum;
-	}
-
-	/**
 	 * activates a spring at the specified location
 	 * @param where
 	 */
-	public void dropAnchor(Vec3D where){
+	public void dropAnchor(Vec3 where){
 		//update 
-		if(!lock)anchor = where.copy();
+		if(!lock)anchor = where;
 		lock = true;
 	}
 
@@ -250,32 +210,14 @@ public class Ple_Agent {
 	 * @param show - display a line for the spring
 	 */
 	public void updateAnchor( float stiffness, float damping, float threshold, boolean show){
-		float gravity = 0.0f; //0.6f
+//		float gravity = 0.0f; //0.6f
 		float mass = 1.0f; // 2.0
 
 		if(lock){
-			float forceX = (anchor.x - loc.x) * stiffness;
-			float ax = forceX / mass;
-			vx = damping * (vx + ax);
-			loc.x += vx;
-			float forceY = (anchor.y - loc.y) * stiffness;
-			forceY += gravity;
-			float ay = forceY / mass;
-			vy = damping * (vy + ay);
-			loc.y += vy;
-			float forceZ = (anchor.z - loc.z) * stiffness;
-			forceZ += gravity;
-			float az = forceZ / mass;
-			vz = damping * (vz + az);
-			loc.z += vz;
-
-			float d = loc.distanceTo(anchor);
-
-			if(d < threshold){
-				if(show){
-					vLine(loc,anchor);	
-				}
-			}
+			Vec3 dif = anchor.subtract(loc);
+			loc = loc.add((v = v.add(dif.scale(stiffness/mass)).scale(damping)));
+			if (dif.length() < threshold && show) 
+				vLine(loc, anchor);
 		}
 	}
 	
@@ -288,38 +230,17 @@ public class Ple_Agent {
 	 * @param show - display a line for the spring
 	 */
 	public void updateAnchor2( float stiffness, float damping, float restLength, float scale, float threshold, boolean show){
-		float gravity = 0.0f; //0.6f
+//		float gravity = 0.0f; //0.6f
 		float mass = 1.0f; // 2.0
 
 		//float dist = anchor.distanceTo(loc);
 		//float normDistStrength = (dist - restLength) / dist;
 		
 		if(lock){
-			float forceX = ((anchor.x - loc.x)-restLength) * stiffness;
-			float ax = forceX / mass;
-			vx = damping * (vx + ax);
-			//loc.x += vx;
-			acc.x += vx * scale;
-			float forceY = ((anchor.y - loc.y)-restLength) * stiffness;
-			forceY += gravity;
-			float ay = forceY / mass;
-			vy = damping * (vy + ay);
-			//loc.y += vy;
-			acc.y += vy* scale;
-			float forceZ = ((anchor.z - loc.z)-restLength) * stiffness;
-			forceZ += gravity;
-			float az = forceZ / mass;
-			vz = damping * (vz + az);
-			//loc.z += vz;
-			acc.z += vz* scale;
-
-			float d = loc.distanceTo(anchor);
-
-			if(d < threshold){
-				if(show){
-					vLine(loc,anchor);	
-				}
-			}
+			Vec3 dif = anchor.subtract(loc);
+			acc = acc.add((v = v.add(dif.subtract(restLength).scale(stiffness/mass)).scale(damping)).scale(scale));
+			if (dif.length() < threshold && show) 
+				vLine(loc, anchor);
 		}
 	}
 
@@ -340,28 +261,41 @@ public class Ple_Agent {
 	public void drawTrail(float thresh){
 		if (trail.size() > 1){
 			for (int i = 1; i < trail.size(); i++){
-				Vec3D v1 = (Vec3D) trail.get(i);
-				Vec3D v2 = (Vec3D) trail.get(i-1);
+				Vec3 v1 = (Vec3) trail.get(i);
+				Vec3 v2 = (Vec3) trail.get(i-1);
 
-				float d = v1.distanceTo(v2);
+				float d = v1.distance(v2);
 				if(d < thresh){
 					vLine(v1,v2);
 				}
 			}
 		}
 	}
+	
+	public List<Vec3> getTrail(){
+		return Collections.unmodifiableList(trail);
+	}
 
+	
+	private IAction dropTrailAction(double every, int limit){
+		return (time) -> {
+			if(trail.size() < limit){
+				trail.add(loc);
+				controller.run(every, dropTrailAction(every, limit));
+			} else {
+				trail.remove(0);
+			}
+		};
+	}
+	
 	/**
 	 * This method allows for dropping a location vector to a list in order to generate a trail.
 	 * @param every - drop vector every so many frames
 	 * @param limit - limit the maximum number of drops.
 	 */
 	public void dropTrail(int every, int limit){
-		if(trail.size() < limit){
-			if(p5.frameCount % every == 0){
-				trail.add(loc.copy());
-			}
-		}
+		controller.run((double)every, dropTrailAction(every, limit));
+		
 	}
 
 
@@ -372,28 +306,27 @@ public class Ple_Agent {
 	 * @param v - vector to test
 	 * @return
 	 */
-	public Vec3D closestNormalToSpline(Spline3D sp, Vec3D v){
+	public Vec3 closestNormalToLineString(LineString ls, Vec3 v){
 
-		Vec3D target = null;
+		Vec3 target = null;
 		//Vec3D dir = null;
 		float cloDist = 1000000; 
 
-		for (int i = 1; i < sp.pointList.size(); i++) {
+		for (Pair<Vec3, Vec3> pair: ls)  {
+			Vec3 a = pair.first;
+			Vec3 b = pair.second;
 
-			Vec3D a = (Vec3D) sp.pointList.get(i);
-			Vec3D b = (Vec3D) sp.pointList.get(i-1);
+			Vec3 normal = getNormalPoint(v,a,b);
 
-			Vec3D normal = getNormalPoint(v,a,b);
+			float da = normal.distance(a);
+			float db = normal.distance(b);
+			Vec3 line = b.subtract(a);
 
-			float da = normal.distanceTo(a);
-			float db = normal.distanceTo(b);
-			Vec3D line = b.sub(a);
-
-			if (da + db > line.magnitude()+1) {
-				normal = b.copy();
+			if (da + db > line.length()+1) {
+				normal = new Vec3(b.x, b.y, b.z);
 			}
 
-			float d = v.distanceTo(normal);
+			float d = v.distance(normal);
 			if (d < cloDist) {
 				cloDist = d;
 				target = normal;
@@ -407,43 +340,44 @@ public class Ple_Agent {
 
 	/**
 	 * Returns the normal to the spline plus the direction of the line, allows to flow along a line.
-	 * @param sp - Spline3D to test
+	 * @param ls - Spline3D to test
 	 * @param v - vector to test
 	 * @param amountOfDir - amount of directionality added to the normal vector.
 	 * @return
 	 */
-	public Vec3D closestNormalandDirectionToSpline(Spline3D sp, Vec3D v, float amountOfDir){
+	public Vec3 closestNormalandDirectionToLineString(LineString ls, Vec3 v, float amountOfDir){
 
-		Vec3D target = null;
-		Vec3D dir = null;
-		float cloDist = 1000000; 
+		Vec3 target = null;
+		Vec3 dir = null;
+		float cloDist = 1000000;
 
-		for (int i = 1; i < sp.pointList.size(); i++) {
+		for (Pair<Vec3, Vec3> pair: ls) {
+			Vec3 a = pair.first;
+			Vec3 b = pair.second;
 
-			Vec3D a = (Vec3D) sp.pointList.get(i);
-			Vec3D b = (Vec3D) sp.pointList.get(i-1);
+			Vec3 normal = getNormalPoint(v,a,b);
 
-			Vec3D normal = getNormalPoint(v,a,b);
+			float da = normal.distance(a);
+			float db = normal.distance(b);
+			Vec3 line = b.subtract(a);
 
-			float da = normal.distanceTo(a);
-			float db = normal.distanceTo(b);
-			Vec3D line = b.sub(a);
-
-			if (da + db > line.magnitude()+1) {
-				normal = b.copy();
+			if (da + db > line.length()+1) {
+				normal = new Vec3(b.x,b.y,b.z);
 			}
 
-			float d = v.distanceTo(normal);
+			float d = v.distance(normal);
 			if (d < cloDist) {
 				cloDist = d;
 				target = normal;
 
-				dir = line.copy();
-				dir.normalize();
-				dir.scaleSelf(amountOfDir);
-			}	
+				dir = line.normalize().scale(amountOfDir);
+			}
 
-			target.addSelf(dir);
+			if (target == null){
+				System.out.println("upsy");
+			}
+			
+			target = target.add(dir);
 
 		}
 		return target;
@@ -456,16 +390,10 @@ public class Ple_Agent {
 	 * @param b - vector 3
 	 * @return
 	 */
-	public  Vec3D getNormalPoint(Vec3D p, Vec3D a, Vec3D b) {
-
-		Vec3D ap = p.sub(a);
-
-		Vec3D ab = b.sub(a);
-		ab.normalize();
-		// Project vector "diff" onto line by using the dot product
-		ab.scaleSelf(ap.dot(ab));
-		Vec3D normalPoint = a.add(ab);
-		return normalPoint;
+	public  Vec3 getNormalPoint(Vec3 p, Vec3 a, Vec3 b) {
+		Vec3 ap = p.subtract(a);
+		Vec3 ab = b.subtract(a).normalize();
+		return a.add(ab.scale(ap.dot(ab)));
 	}
 
 	/**
@@ -473,49 +401,43 @@ public class Ple_Agent {
 	 * @param len - Length of the projection
 	 * @return
 	 */
-	public Vec3D futureLoc(float len){
-		Vec3D v = vel.copy();
-		v.normalize();
-		v.scaleSelf(len);
-
-		v.addSelf(loc);
-
-		return v;
+	public Vec3 futureLoc(float len){
+		return vel.normalize().scale(len).add(loc);
 	}
 
-	/**
-	 * Calculates the update of the tail.
-	 * @param rate - updates the tail every so many frames, allows for longer tails, scattered.
-	 */
-	public void updateTail(int rate){	
-		if(p5.frameCount % rate == 0){
-			for (int i = 0; i < tail.length-1; i++){
-				tail[i] = tail[i+1];
-			}
-			tail[tail.length-1] = loc.copy();
-		}
-	}
+//	/**
+//	 * Calculates the update of the tail.
+//	 * @param rate - updates the tail every so many frames, allows for longer tails, scattered.
+//	 */
+//	public void updateTail(int rate){	
+//		if(p5.frameCount % rate == 0){
+//			for (int i = 0; i < tail.length-1; i++){
+//				tail[i] = tail[i+1];
+//			}
+//			tail[tail.length-1] = new Vec3(loc.x, loc.y, loc.z);
+//		}
+//	}
 
-	/**
-	 * Calculates the update of the velocity tail.
-	 * @param rate  - updates the tail every so many frames, allows for longer tails, scattered.
-	 */
-	public void updateVelTail(int rate){	
-		if(p5.frameCount % rate == 0){
-			for (int i = 0; i < velTail.length-1; i++){
-				velTail[i] = velTail[i+1];
-			}
-		}
-	}
+//	/**
+//	 * Calculates the update of the velocity tail.
+//	 * @param rate  - updates the tail every so many frames, allows for longer tails, scattered.
+//	 */
+//	public void updateVelTail(int rate){	
+//		if(p5.frameCount % rate == 0){
+//			for (int i = 0; i < velTail.length-1; i++){
+//				velTail[i] = velTail[i+1];
+//			}
+//		}
+//	}
 
 	/**
 	 * Initialize Tail. Call in the setup.
 	 * @param size - define the size of the Tail.
 	 */
 	public void initTail(int size){
-		tail = new Vec3D [size];
+		tail = new Vec3[size];
 		for(int i = 0; i < size; i++){
-			tail[i] = loc.copy();
+			tail[i] = new Vec3(loc.x, loc.y, loc.z);
 		}
 	}
 
@@ -524,9 +446,9 @@ public class Ple_Agent {
 	 * @param size  - define the size of the Tail.
 	 */
 	public void initVelTail(int size){
-		velTail = new Vec3D [size];
+		velTail = new Vec3[size];
 		for(int i = 0; i < size; i++){
-			velTail[i] = vel.copy();
+			velTail[i] = new Vec3(vel.x, vel.y, vel.z);
 		}
 	}
 
@@ -535,7 +457,7 @@ public class Ple_Agent {
 	 * Display a point on Location.
 	 */
 	public void displayPoint(){
-		vPt(loc);
+//		vPt(loc);
 	}
 
 	/**
@@ -543,11 +465,8 @@ public class Ple_Agent {
 	 * @param len - length of the line
 	 */
 	public void displayDir(float len){
-		Vec3D v = vel.copy();
-		v.normalize();
-		v.scaleSelf(len);
-		v.addSelf(loc);	
-		vLine(loc, v);
+		Vec3 v = vel.normalize().scale(len).add(loc);	
+//		vLine(loc, v);
 	}
 
 	/**
@@ -566,30 +485,30 @@ public class Ple_Agent {
 	public void displayTailPoints(float r1, float g1, float b1, float al1, float s1, float r2, float g2, float b2, float al2, float s2){
 		for(int i = 0; i < tail.length; i++){
 
-			float r = PApplet.map(i, 0, tail.length-1, r1,r2);
-			float g = PApplet.map(i, 0, tail.length-1, g1,g2);
-			float b = PApplet.map(i, 0, tail.length-1, b1,b2);
+			float r = MathUtilities.map(i, 0, tail.length-1, r1,r2);
+			float g = MathUtilities.map(i, 0, tail.length-1, g1,g2);
+			float b = MathUtilities.map(i, 0, tail.length-1, b1,b2);
 
-			float a = PApplet.map(i, 0, tail.length-1, al1,al2);
+			float a = MathUtilities.map(i, 0, tail.length-1, al1,al2);
 
-			float s = PApplet.map(i, 0, tail.length-1, s1,s2);
+			float s = MathUtilities.map(i, 0, tail.length-1, s1,s2);
 
-			p5.strokeWeight(s);
-			p5.stroke(r,g,b, a);
-			vPt(tail[i]);
+//			p5.strokeWeight(s);
+//			p5.stroke(r,g,b, a);
+//			vPt(tail[i]);
 
 			//vLine(tail[i], tail[i-1]);
 		}
 	}
 
 
-	/**
-	 * Vector Point
-	 * @param v
-	 */
-	public void vPt(Vec3D v){
-		p5.point(v.x,v.y,v.z);
-	}
+//	/**
+//	 * Vector Point
+//	 * @param v
+//	 */
+//	public void vPt(Vec3D v){
+//		p5.point(v.x,v.y,v.z);
+//	}
 
 
 	/**
@@ -599,8 +518,7 @@ public class Ple_Agent {
 	 * @param z - force in Z
 	 */
 	public void addForce(float x, float y, float z){
-		Vec3D v = new Vec3D(x,y,z);
-		acc.addSelf(v);
+		acc = acc.add(new Vec3(x,y,z));
 	}
 
 	/**
@@ -608,8 +526,8 @@ public class Ple_Agent {
 	 * @param v1 - Vector 1
 	 * @param v2 - Vector 2
 	 */
-	public void vLine(Vec3D v1, Vec3D v2){
-		p5.line(v1.x,v1.y,v1.z, v2.x,v2.y,v2.z);
+	public void vLine(Vec3 v1, Vec3 v2){
+//		controller.getScene().add3DObject(MeshUtilities.createLines(Arrays.asList(v1, v2), 1));
 	}
 
 	/**
@@ -619,12 +537,14 @@ public class Ple_Agent {
 	 * @param dZ - bound for Z, from -dZ to dZ.
 	 */
 	public void wrapSpace(float dX, float dY, float dZ) {
-		if (loc.x < -dX) loc.x = dX;
-		if (loc.y < -dY) loc.y = dY;
-		if (loc.z < -dZ) loc.z = dZ;
-		if (loc.x > dX) loc.x = -dX;
-		if (loc.y > dY) loc.y = -dY;
-		if (loc.z > dZ) loc.z = -dZ;
+		float x = loc.x, y = loc.y, z = loc.z;
+		if (loc.x < -dX) x = dX;
+		if (loc.y < -dY) y = dY;
+		if (loc.z < -dZ) z = dZ;
+		if (loc.x > dX) x = -dX;
+		if (loc.y > dY) y = -dY;
+		if (loc.z > dZ) z = -dZ;
+		loc = new Vec3(x,y,z);
 	}
 
 	/**
@@ -634,31 +554,35 @@ public class Ple_Agent {
 	 * @param dZ - bound for Z, from -dZ to dZ.
 	 */
 	public void bounceSpace(float dX, float dY, float dZ) {
+		float x = loc.x, y = loc.y, z = loc.z;
+		float vx = vel.x, vy = vel.y, vz = vel.z;
 		if (loc.x <= -dX) {
-			vel.x *= -1;
-			loc.x = -dX;
+			vx *= -1;
+			x = -dX;
 		}
 		if (loc.y <= -dY) {
-			vel.y *= -1;
-			loc.y =  -dY;
+			vy *= -1;
+			y =  -dY;
 		}
 		if (loc.z <= -dZ) {
-			vel.z *= -1;
-			loc.z = -dZ;
+			vz *= -1;
+			z = -dZ;
 		}
 		if (loc.x >= dX) {
-			vel.x *= -1;
-			loc.x = dX;
+			vx *= -1;
+			x = dX;
 		}
 		if (loc.y >= dY) {
-			vel.y *= -1;
-			loc.y =  dY;
+			vy *= -1;
+			y =  dY;
 
 		}
 		if (loc.z >= dZ) {
-			vel.z *= -1;
-			loc.z = dZ;
+			vz *= -1;
+			z = dZ;
 		}
+		loc = new Vec3(x,y,z);
+		vel = new Vec3(vx,vy,vz);
 	}
 
 	/**
@@ -673,7 +597,7 @@ public class Ple_Agent {
 
 		for (int i = 0; i < boids.size(); i ++){
 			Ple_Agent pa  = (Ple_Agent)boids.get(i);
-			float d = loc.distanceTo(pa.loc);
+			float d = loc.distance(pa.loc);
 			if(d < cloDist && d > 0){
 				cloDist = d;
 				cloId = i;
@@ -697,7 +621,7 @@ public class Ple_Agent {
 		for (int i = 0; i < boids.size(); i++) {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 
-			float d = loc.distanceTo(other.loc);
+			float d = loc.distance(other.loc);
 			if(d > fromDist && d < toDist){
 				vLine(loc, other.loc);
 			}
@@ -716,7 +640,7 @@ public class Ple_Agent {
 		for (int i = 0; i < boids.size(); i++) {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 			for(int j = 0; j < tail.length; j++){
-				float d = tail[j].distanceTo(other.tail[j]);
+				float d = tail[j].distance(other.tail[j]);
 				if(d > fromDist && d < toDist){
 					vLine(tail[j], other.tail[j]);
 				}
@@ -739,25 +663,19 @@ public class Ple_Agent {
 
 			for(int j = 0; j < tail.length; j++){
 
-				float d = tail[j].distanceTo(other.tail[j]);
+				float d = tail[j].distance(other.tail[j]);
 				if(d > fromDist && d < toDist){
 
 
 					//Vec3D myVel = velTail[j].copy();
-					Vec3D myVel = vel.copy();
-					myVel.normalize();
-					myVel.scaleSelf(scale1);
-					myVel.addSelf(tail[j]);
+					Vec3 myVel = vel.normalize().scale(scale1).add(tail[j]);
 
 					//Vec3D oVel = other.velTail[j].copy();
-					Vec3D oVel = other.vel.copy();
-					oVel.normalize();
-					oVel.scaleSelf(scale2);
-					oVel.addSelf(other.tail[j]);
+					Vec3 oVel = other.vel.normalize().scale(scale2).add(other.tail[j]);
 
-					float d2 = myVel.distanceTo(oVel);
+					float d2 = myVel.distance(oVel);
 					if(d2 > fromDist && d2 < toDist){
-						vBezier(tail[j], myVel, oVel, other.tail[j]);
+//						vBezier(tail[j], myVel, oVel, other.tail[j]);
 					}
 				}
 			}
@@ -777,34 +695,28 @@ public class Ple_Agent {
 		for (int i = 0; i < boids.size(); i++) {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 
-			float d = loc.distanceTo(other.loc);
+			float d = loc.distance(other.loc);
 			if(d > fromDist && d < toDist){
 
-				Vec3D myVel = vel.copy();
-				myVel.scaleSelf(scale1);
-				myVel.addSelf(loc);
+				Vec3 myVel = vel.scale(scale1).add(loc);
+				Vec3 oVel = other.vel.scale(scale2).add(other.loc);
 
-				Vec3D oVel = other.vel.copy();
-				oVel.scaleSelf(scale2);
-				oVel.addSelf(other.loc);
-
-
-				vBezier(loc, myVel, oVel, other.loc);
+//				vBezier(loc, myVel, oVel, other.loc);
 			}
 
 		}
 	}
 
-	/**
-	 * draw bezier from 4 vectors
-	 * @param v1 - vector 1
-	 * @param v2 - vector 2
-	 * @param v3 - vector 3
-	 * @param v4 - vector 4
-	 */
-	public void vBezier(Vec3D v1, Vec3D v2,Vec3D v3,Vec3D v4){
-		p5.bezier(v1.x, v1.y, v1.z,    v2.x, v2.y, v2.z,   v3.x, v3.y, v3.z,    v4.x, v4.y, v4.z);
-	};
+//	/**
+//	 * draw bezier from 4 vectors
+//	 * @param v1 - vector 1
+//	 * @param v2 - vector 2
+//	 * @param v3 - vector 3
+//	 * @param v4 - vector 4
+//	 */
+//	public void vBezier(Vec3D v1, Vec3D v2,Vec3D v3,Vec3D v4){
+//		p5.bezier(v1.x, v1.y, v1.z,    v2.x, v2.y, v2.z,   v3.x, v3.y, v3.z,    v4.x, v4.y, v4.z);
+//	};
 
 	/**
 	 * Wander behaivior in 2D. Based on the script by Daniel Shiffman on Craig Reynolds agents.
@@ -813,17 +725,14 @@ public class Ple_Agent {
 	 * @param change - amount of change.
 	 */
 	public void wander2D(float wanderR, float wanderD, float change) {
-		wandertheta += p5.random(-change,change);     // Randomly change wander theta
+		wandertheta += MathUtilities.random(-change,change);     // Randomly change wander theta
 
 		// Now we have to calculate the new location to steer towards on the wander circle
-		Vec3D circleloc = vel.copy();  // Start with velocity
-		circleloc.normalize();            // Normalize to get heading
-		circleloc.scaleSelf(wanderD);          // Multiply by distance
-		circleloc.addSelf(loc);               // Make it relative to boid's location
+		Vec3 circleloc = vel.normalize().scale(wanderD).add(loc);
 
-		Vec3D circleOffSet = new Vec3D(wanderR* PApplet.cos(wandertheta),wanderR* PApplet.sin(wandertheta),0);
-		Vec3D target = circleloc.add(circleOffSet);
-		acc.addSelf(steer(target,false));  // Steer towards it 
+		Vec3 circleOffSet = new Vec3(wanderR* Math.cos(wandertheta),wanderR* Math.sin(wandertheta),0);
+		Vec3 target = circleloc.add(circleOffSet);
+		acc = acc.add(steer(target,false));  // Steer towards it 
 	} 
 	
 	/**
@@ -834,22 +743,21 @@ public class Ple_Agent {
 	 * @param strength - how strong is the force of occilation.
 	 */
 	public void Occilate2D(float wanderR, float wanderD, float amplitude, float period, float strength) {
-		float occ = amplitude * PApplet.cos(PApplet.TWO_PI * p5.frameCount / period);
+		int framecount = (int) (controller.getScheduler().getTime() / 10 /* workaround for bug*/ * 60);
+		float occ = (float) (amplitude * Math.cos(Math.PI * 2 * framecount / period));
 		wandertheta = occ;     // Randomly change wander theta
 		
 
 		// Now we have to calculate the new location to steer towards on the wander circle
-		Vec3D circleloc = vel.copy();  // Start with velocity
-		circleloc.normalize();            // Normalize to get heading
-		circleloc.scaleSelf(wanderD);          // Multiply by distance
-		circleloc.addSelf(loc);               // Make it relative to boid's location
+		Vec3 circleloc = vel.normalize().scale(wanderD).add(loc);               // Make it relative to boid's location
 
-		float h = vel.headingXY();
+		// heading XY
+		float h = (float) Math.atan2(vel.y, vel.x);
 		
-		Vec3D circleOffSet = new Vec3D(wanderR* PApplet.cos(wandertheta + h),wanderR* PApplet.sin(wandertheta + h),0);
-		Vec3D target = circleloc.add(circleOffSet);
+		Vec3 circleOffSet = new Vec3(wanderR* Math.cos(wandertheta + h),wanderR* Math.sin(wandertheta + h),0);
+		Vec3 target = circleloc.add(circleOffSet);
 		//seek(target, strength);
-		acc.addSelf(steer(target,false));  // Steer towards it 
+		acc = acc.add(steer(target,false));  // Steer towards it 
 	} 
 	
 	/**
@@ -861,24 +769,23 @@ public class Ple_Agent {
 	 * @param occHeight - height amplitud of occilation.
 	 */
 	public void Occilate3D(float wanderR, float wanderD, float amplitude, float period, float strength, float occHeight) {
-		float occ = amplitude * PApplet.cos(PApplet.TWO_PI * p5.frameCount / period);
+		int framecount = (int) (controller.getScheduler().getTime() / 10 /* workaround for bug*/ * 60);
+		float occ = (float) (amplitude * Math.cos(Math.PI * 2 * framecount / period));
 		wandertheta = occ;     // Randomly change wander theta
 		
 
 		// Now we have to calculate the new location to steer towards on the wander circle
-		Vec3D circleloc = vel.copy();  // Start with velocity
-		circleloc.normalize();            // Normalize to get heading
-		circleloc.scaleSelf(wanderD);          // Multiply by distance
-		circleloc.addSelf(loc);               // Make it relative to boid's location
+		Vec3 circleloc = vel.normalize().scale(wanderD).add(loc);
 
-		float h = vel.headingXY();
-		float occZ = PApplet.map(occ, -amplitude, amplitude, -occHeight,occHeight);
+		// heading XY
+		float h = (float) Math.atan2(vel.y, vel.x);
+		float occZ = MathUtilities.map(occ, -amplitude, amplitude, -occHeight,occHeight);
 		
-		Vec3D circleOffSet = new Vec3D(wanderR* PApplet.cos(wandertheta + h),wanderR* PApplet.sin(wandertheta + h), 0);
-		Vec3D target = circleloc.add(circleOffSet);
-		target.z = occZ;
+		Vec3 circleOffSet = new Vec3(wanderR* Math.cos(wandertheta + h),wanderR* Math.sin(wandertheta + h), 0);
+		Vec3 target = circleloc.add(circleOffSet);
+		target = new Vec3(target.x, target.y, occZ);
 		//seek(target, strength);
-		acc.addSelf(steer(target,false));  // Steer towards it 
+		acc = acc.add(steer(target,false));  // Steer towards it 
 	} 
 	
 	/**
@@ -891,14 +798,11 @@ public class Ple_Agent {
 		wandertheta += angle;     // Randomly change wander theta
 
 		// Now we have to calculate the new location to steer towards on the wander circle
-		Vec3D circleloc = vel.copy();  // Start with velocity
-		circleloc.normalize();            // Normalize to get heading
-		circleloc.scaleSelf(wanderD);          // Multiply by distance
-		circleloc.addSelf(loc);               // Make it relative to boid's location
+		Vec3 circleloc = vel.normalize().scale(wanderD).add(loc);
 
-		Vec3D circleOffSet = new Vec3D(wanderR* PApplet.cos(wandertheta),wanderR* PApplet.sin(wandertheta),0);
-		Vec3D target = circleloc.add(circleOffSet);
-		acc.addSelf(steer(target,false));  // Steer towards it 
+		Vec3 circleOffSet = new Vec3(wanderR* Math.cos(wandertheta),wanderR* Math.sin(wandertheta),0);
+		Vec3 target = circleloc.add(circleOffSet);
+		acc = acc.add(steer(target,false));  // Steer towards it 
 	} 
 	
 	
@@ -907,18 +811,19 @@ public class Ple_Agent {
 	 * Follows a target.
 	 * @param target - vector of target
 	 */
-	public void seek(Vec3D target, float factor) {
-		Vec3D v = steer(target,false);
-		v.scaleSelf(factor);
-		acc.addSelf(v);
+	public void seek(Vec3 target, float factor) {
+		Vec3 steered = steer(target, false);
+		Vec3 toAdd = steered.scale(factor);
+		Vec3 newAcc = acc.add(toAdd);
+		acc = newAcc;
 	}
 
 	/**
 	 * Follows a target slowing down at the moment of reaching.
 	 * @param target - vector of target.
 	 */
-	public  void arrive(Vec3D target) {
-		acc.addSelf(steer(target,true));
+	public  void arrive(Vec3 target) {
+		acc = acc.add(steer(target, true));
 	}
 
 
@@ -930,18 +835,19 @@ public class Ple_Agent {
 	 * @param slowdown
 	 * @return
 	 */
-	public Vec3D steer(Vec3D target, boolean slowdown) {
-		Vec3D steer; 
-		Vec3D desired = target.sub(loc);  
-		float d = desired.magnitude(); 	
+	public Vec3 steer(Vec3 target, boolean slowdown) {
+		Vec3 steer; 
+		Vec3 desired = target.subtract(loc);  
+		float d = desired.length(); 	
 		if (d > 0) {
-			desired.normalize();
-			if ((slowdown) && (d < 100.0f)) desired.scaleSelf(maxspeed*(d/100.0f));
-			else desired.scaleSelf(maxspeed);
-			steer = desired.sub(vel).limit(maxforce);
+			desired = desired.normalize();
+			if ((slowdown) && (d < 100.0f)) 
+				desired = desired.scale(maxspeed*(d/100.0f));
+			else desired = desired.scale(maxspeed);
+			steer = desired.subtract(vel).normalize().scale(maxforce);
 		} 
 		else {
-			steer = new Vec3D();
+			steer = new Vec3(0,0,0);
 		}
 		return steer;
 	}	
@@ -962,7 +868,7 @@ public class Ple_Agent {
 	 * @param cAli - activate alignment
 	 * @param bSep - activate separation
 	 */
-	public void flock(ArrayList <Ple_Agent> boids, float desCoh , float desAli, float  desSep , 
+	public void flock(List<Ple_Agent> boids, float desCoh , float desAli, float  desSep , 
 			float cohScale, float aliScale,float sepScale){
 
 		//FLOCK : COH-ALI-SEP (true,true,true);
@@ -974,14 +880,14 @@ public class Ple_Agent {
 		float desiredSeparation = desSep;
 		float aliNeighborDist = desAli;
 
-		Vec3D coh = new Vec3D();
-		Vec3D cohReturn = new Vec3D();
+		Vec3 coh = new Vec3(0,0,0);
+		Vec3 cohReturn = new Vec3(0,0,0);
 
-		Vec3D sep = new Vec3D();
-		Vec3D sepReturn = new Vec3D();
+		Vec3 sep = new Vec3(0,0,0);
+		Vec3 sepReturn = new Vec3(0,0,0);
 
-		Vec3D ali = new Vec3D();
-		Vec3D aliReturn = new Vec3D();
+		Vec3 ali = new Vec3(0,0,0);
+		Vec3 aliReturn = new Vec3(0,0,0);
 
 		int count1 = 0;
 		int count2 = 0;
@@ -991,71 +897,61 @@ public class Ple_Agent {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 			//COHESION:
 			if (this != other) {
-				if (loc.distanceToSquared(other.loc) < cohNeighborDist*cohNeighborDist) {
-					coh.addSelf(other.loc); 
+				if (loc.squaredDistance(other.loc) < cohNeighborDist*cohNeighborDist) {
+					coh = coh.add(other.loc); 
 					count1++;
 				}
 			}
 			//SEPARATION:
 			if (this != other) {
-				float d = loc.distanceTo(other.loc);
+				float d = loc.distance(other.loc);
 				// If the distance is greater than 0 and less than an arbitrary amount (0 when you are yourself)
 				if (d < desiredSeparation) {
 					// Calculate vector pointing away from neighbor
-					Vec3D diff = loc.sub(other.loc);
-					diff.normalizeTo(1.0f/d);
-					sep.addSelf(diff);
+					sep = sep.add(loc.subtract(other.loc).normalize().scale(1/d));
 					count2++;
 				}
 			}
 
 			//ALIGNMENT:
 			if (this != other) {
-				if (loc.distanceToSquared(other.loc) < aliNeighborDist*aliNeighborDist) {
-					ali.addSelf(other.vel);
+				if (loc.squaredDistance(other.loc) < aliNeighborDist*aliNeighborDist) {
+					ali = ali.add(other.vel);
 					count3++;	
 				}
 			}		
 		}
 		//COHESION:
 		if (count1 > 0) {
-			coh.scaleSelf(1.0f/count1);
+			coh = coh.scale(1.0f/count1);
 			cohReturn = steer(coh,false);
 		}
 
 		//SEPARATION:
 		if (count2 > 0) {
-			sep.scaleSelf(1.0f/count2);
+			sep = sep.scale(1.0f/count2);
 		}
 
 
-		if (sep.magSquared() > 0) {
-			sep.normalizeTo(maxspeed);
-			sep.subSelf(vel);
-			sep.limit(maxforce);
+		if (sep.squaredLength() > 0) {
+			sep = sep.normalize().scale(maxspeed).subtract(vel).normalize().scale(maxforce);
 		}
 		sepReturn = sep;
 
 		//ALIGNMENT:
 		if (count3 > 0) {
-			ali.scaleSelf(1.0f/count3);
+			ali = ali.scale(1.0f/count3);
 		}
-		if (ali.magSquared() > 0) {
-			ali.normalizeTo(maxspeed);
-			ali.subSelf(vel);
-			ali.limit(maxforce);
+		if (ali.squaredLength() > 0) {
+			ali = ali.normalize().scale(maxspeed).subtract(vel).normalize().scale(maxforce);
 		}
 		aliReturn = ali;
 
 		//---------------------------------------------------
-
-		sepReturn.scaleSelf(sepScale);
-		cohReturn.scaleSelf(cohScale);
-		aliReturn.scaleSelf(aliScale);
-
-		acc.addSelf(sepReturn);
-		acc.addSelf(aliReturn);
-		acc.addSelf(cohReturn);	
+		
+		acc = acc.add((sepReturn = sepReturn.scale(sepScale)))
+				 .add((cohReturn = cohReturn.scale(cohScale)))
+				 .add((aliReturn = aliReturn.scale(aliScale)));
 	}
 
 	/**
@@ -1074,7 +970,7 @@ public class Ple_Agent {
 	 * @param dist
 	 * @param scale
 	 */
-	public void alignmentCall(ArrayList <Ple_Agent> boids, float dist, float scale){		
+	public void alignmentCall(List <Ple_Agent> boids, float dist, float scale){		
 		flock(boids,0,dist,0,0,scale,0);		
 	}
 
@@ -1084,7 +980,7 @@ public class Ple_Agent {
 	 * @param dist
 	 * @param scale
 	 */
-	public void separationCall(ArrayList <Ple_Agent> boids, float dist, float scale){		
+	public void separationCall(List <Ple_Agent> boids, float dist, float scale){		
 		flock(boids,0,0,dist,0,0,scale);		
 	}
 
@@ -1093,7 +989,7 @@ public class Ple_Agent {
 	 * 
 	 * @return
 	 */
-	public Vec3D getLocation(){
+	public Vec3 getLocation(){
 		return loc;
 	}
 	
@@ -1101,7 +997,7 @@ public class Ple_Agent {
 	 * get the velocity
 	 * @return
 	 */
-	public Vec3D getVelocity(){
+	public Vec3 getVelocity(){
 		return vel;
 	}
 	
@@ -1109,7 +1005,7 @@ public class Ple_Agent {
 	 * get the acceleration
 	 * @return
 	 */
-	public Vec3D getAcceleration(){
+	public Vec3 getAcceleration(){
 		return acc;
 	}
 	
@@ -1117,7 +1013,7 @@ public class Ple_Agent {
 	 * get the location of the anchor
 	 * @return
 	 */
-	public Vec3D getAnchor(){
+	public Vec3 getAnchor(){
 		return anchor;
 	}
 	
@@ -1125,7 +1021,7 @@ public class Ple_Agent {
 	 * method to get the array of tail points
 	 * @return
 	 */
-	public Vec3D [] getTailPoints(){
+	public Vec3 [] getTailPoints(){
 		return tail;
 	}
 	
@@ -1133,7 +1029,7 @@ public class Ple_Agent {
 	 * method to get the array of past velocities
 	 * @return
 	 */
-	public Vec3D [] getVelTailPoints(){
+	public Vec3 [] getVelTailPoints(){
 		return velTail;	
 	}
 	
@@ -1165,21 +1061,21 @@ public class Ple_Agent {
 	 * set the velocity
 	 * @param v
 	 */
-	public void setVelocity(Vec3D v){
+	public void setVelocity(Vec3 v){
 		vel = v;
 	}
 	/**
 	 * set the location
 	 * @param v
 	 */
-	public void setLocation(Vec3D v){
+	public void setLocation(Vec3 v){
 		loc = v;
 	}
 	/**
 	 * set the acceleration
 	 * @param v
 	 */
-	public void setAcceleration(Vec3D v){
+	public void setAcceleration(Vec3 v){
 		acc = v;
 	}
 	/**
