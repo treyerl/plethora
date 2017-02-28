@@ -7,7 +7,6 @@
 
 package plethora.core;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -17,7 +16,7 @@ import ch.fhnw.ether.controller.event.IEventScheduler.IAction;
 import ch.fhnw.util.Pair;
 import ch.fhnw.util.math.MathUtilities;
 import ch.fhnw.util.math.Vec3;
-import ch.fhnw.util.math.geometry.LineString;
+import ch.fhnw.util.math.geometry.LineStrip;
 import plethora.core.Ple_Terrain.IndexBox;
 
 /**
@@ -216,8 +215,8 @@ public class Ple_Agent {
 		if(lock){
 			Vec3 dif = anchor.subtract(loc);
 			loc = loc.add((v = v.add(dif.scale(stiffness/mass)).scale(damping)));
-			if (dif.length() < threshold && show) 
-				vLine(loc, anchor);
+//			if (dif.length() < threshold && show) 
+//				vLine(loc, anchor);
 		}
 	}
 	
@@ -239,8 +238,8 @@ public class Ple_Agent {
 		if(lock){
 			Vec3 dif = anchor.subtract(loc);
 			acc = acc.add((v = v.add(dif.subtract(restLength).scale(stiffness/mass)).scale(damping)).scale(scale));
-			if (dif.length() < threshold && show) 
-				vLine(loc, anchor);
+//			if (dif.length() < threshold && show) 
+//				vLine(loc, anchor);
 		}
 	}
 
@@ -251,25 +250,6 @@ public class Ple_Agent {
 	 */
 	public void setFree(){
 		lock = false;	
-	}
-
-	/**
-	 * This method will draw the Trail if the dropTrail method is activated. Make sure to have a trail to draw! (initTail).
-	 * @param thresh - this threshold allows for not drawing the lines longer than certain distance. 
-	 * Useful when using a wrapparound space border.
-	 */
-	public void drawTrail(float thresh){
-		if (trail.size() > 1){
-			for (int i = 1; i < trail.size(); i++){
-				Vec3 v1 = (Vec3) trail.get(i);
-				Vec3 v2 = (Vec3) trail.get(i-1);
-
-				float d = v1.distance(v2);
-				if(d < thresh){
-					vLine(v1,v2);
-				}
-			}
-		}
 	}
 	
 	public List<Vec3> getTrail(){
@@ -306,7 +286,7 @@ public class Ple_Agent {
 	 * @param v - vector to test
 	 * @return
 	 */
-	public Vec3 closestNormalToLineString(LineString ls, Vec3 v){
+	public Vec3 closestNormalToLineString(LineStrip ls, Vec3 v){
 
 		Vec3 target = null;
 		//Vec3D dir = null;
@@ -345,7 +325,7 @@ public class Ple_Agent {
 	 * @param amountOfDir - amount of directionality added to the normal vector.
 	 * @return
 	 */
-	public Vec3 closestNormalandDirectionToLineString(LineString ls, Vec3 v, float amountOfDir){
+	public Vec3 closestNormalandDirectionToLineString(LineStrip ls, Vec3 v, float amountOfDir){
 
 		Vec3 target = null;
 		Vec3 dir = null;
@@ -405,112 +385,6 @@ public class Ple_Agent {
 		return vel.normalize().scale(len).add(loc);
 	}
 
-//	/**
-//	 * Calculates the update of the tail.
-//	 * @param rate - updates the tail every so many frames, allows for longer tails, scattered.
-//	 */
-//	public void updateTail(int rate){	
-//		if(p5.frameCount % rate == 0){
-//			for (int i = 0; i < tail.length-1; i++){
-//				tail[i] = tail[i+1];
-//			}
-//			tail[tail.length-1] = new Vec3(loc.x, loc.y, loc.z);
-//		}
-//	}
-
-//	/**
-//	 * Calculates the update of the velocity tail.
-//	 * @param rate  - updates the tail every so many frames, allows for longer tails, scattered.
-//	 */
-//	public void updateVelTail(int rate){	
-//		if(p5.frameCount % rate == 0){
-//			for (int i = 0; i < velTail.length-1; i++){
-//				velTail[i] = velTail[i+1];
-//			}
-//		}
-//	}
-
-	/**
-	 * Initialize Tail. Call in the setup.
-	 * @param size - define the size of the Tail.
-	 */
-	public void initTail(int size){
-		tail = new Vec3[size];
-		for(int i = 0; i < size; i++){
-			tail[i] = new Vec3(loc.x, loc.y, loc.z);
-		}
-	}
-
-	/**
-	 * Initialize Velocity Tail. Call in the setup.
-	 * @param size  - define the size of the Tail.
-	 */
-	public void initVelTail(int size){
-		velTail = new Vec3[size];
-		for(int i = 0; i < size; i++){
-			velTail[i] = new Vec3(vel.x, vel.y, vel.z);
-		}
-	}
-
-
-	/**
-	 * Display a point on Location.
-	 */
-	public void displayPoint(){
-//		vPt(loc);
-	}
-
-	/**
-	 * Display a Line with the direction of the agent.
-	 * @param len - length of the line
-	 */
-	public void displayDir(float len){
-		Vec3 v = vel.normalize().scale(len).add(loc);	
-//		vLine(loc, v);
-	}
-
-	/**
-	 * Display the points of the tails. It allows to use different styles at begining and end.
-	 * @param r1 - red start.
-	 * @param g1 - green start.
-	 * @param b1 - blue start
-	 * @param al1 - alpha start
-	 * @param s1 - size start.
-	 * @param r2 - red end.
-	 * @param g2 - green end.
-	 * @param b2 - blue end.
-	 * @param al2 - alpha end.
-	 * @param s2 - size end.
-	 */
-	public void displayTailPoints(float r1, float g1, float b1, float al1, float s1, float r2, float g2, float b2, float al2, float s2){
-		for(int i = 0; i < tail.length; i++){
-
-			float r = MathUtilities.map(i, 0, tail.length-1, r1,r2);
-			float g = MathUtilities.map(i, 0, tail.length-1, g1,g2);
-			float b = MathUtilities.map(i, 0, tail.length-1, b1,b2);
-
-			float a = MathUtilities.map(i, 0, tail.length-1, al1,al2);
-
-			float s = MathUtilities.map(i, 0, tail.length-1, s1,s2);
-
-//			p5.strokeWeight(s);
-//			p5.stroke(r,g,b, a);
-//			vPt(tail[i]);
-
-			//vLine(tail[i], tail[i-1]);
-		}
-	}
-
-
-//	/**
-//	 * Vector Point
-//	 * @param v
-//	 */
-//	public void vPt(Vec3D v){
-//		p5.point(v.x,v.y,v.z);
-//	}
-
-
 	/**
 	 * Add a force to the acceleration vector.
 	 * @param x - force in X
@@ -519,15 +393,6 @@ public class Ple_Agent {
 	 */
 	public void addForce(float x, float y, float z){
 		acc = acc.add(new Vec3(x,y,z));
-	}
-
-	/**
-	 * Vector Line
-	 * @param v1 - Vector 1
-	 * @param v2 - Vector 2
-	 */
-	public void vLine(Vec3 v1, Vec3 v2){
-//		controller.getScene().add3DObject(MeshUtilities.createLines(Arrays.asList(v1, v2), 1));
 	}
 
 	/**
@@ -590,20 +455,18 @@ public class Ple_Agent {
 	 * @param boids - list of agents in which to search for.
 	 * @return - returns the closest agent.
 	 */
-	public Ple_Agent closestAgent(ArrayList <Ple_Agent> boids){
+	public Ple_Agent closestAgent(List <? extends Ple_Agent> boids){
 
 		float cloDist = 1000000;
-		int cloId = 0;
-
-		for (int i = 0; i < boids.size(); i ++){
-			Ple_Agent pa  = (Ple_Agent)boids.get(i);
+		
+		Ple_Agent closestpa = null;
+		for (Ple_Agent pa: boids){
 			float d = loc.distance(pa.loc);
 			if(d < cloDist && d > 0){
 				cloDist = d;
-				cloId = i;
+				closestpa = pa;
 			}		
-		}		
-		Ple_Agent closestpa  = (Ple_Agent)boids.get(cloId);
+		}
 
 		return closestpa;
 	}
@@ -617,13 +480,13 @@ public class Ple_Agent {
 	 * @param fromDist - min range
 	 * @param toDist - max range
 	 */
-	public void drawLinesInRange(ArrayList<Ple_Agent> boids, float fromDist, float toDist){
+	public void drawLinesInRange(List<? extends Ple_Agent> boids, float fromDist, float toDist){
 		for (int i = 0; i < boids.size(); i++) {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 
 			float d = loc.distance(other.loc);
 			if(d > fromDist && d < toDist){
-				vLine(loc, other.loc);
+//				vLine(loc, other.loc);
 			}
 
 		}	
@@ -636,13 +499,13 @@ public class Ple_Agent {
 	 * @param fromDist - min distance
 	 * @param toDist - max distance
 	 */
-	public void drawLinesBetweenTails(ArrayList<Ple_Agent> boids, float fromDist, float toDist){
+	public void drawLinesBetweenTails(List<? extends Ple_Agent> boids, float fromDist, float toDist){
 		for (int i = 0; i < boids.size(); i++) {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 			for(int j = 0; j < tail.length; j++){
 				float d = tail[j].distance(other.tail[j]);
 				if(d > fromDist && d < toDist){
-					vLine(tail[j], other.tail[j]);
+//					vLine(tail[j], other.tail[j]);
 				}
 			}
 		}
@@ -657,7 +520,7 @@ public class Ple_Agent {
 	 * @param scale1 - scale of the bezier handle 1 based on velocity tail.
 	 * @param scale2 - scale of the bezier handle 2 based on velocity tail.
 	 */
-	public void drawBeziersBetweenTails(ArrayList<Ple_Agent> boids, float fromDist, float toDist, float scale1, float scale2){
+	public void drawBeziersBetweenTails(List<? extends Ple_Agent> boids, float fromDist, float toDist, float scale1, float scale2){
 		for (int i = 0; i < boids.size(); i++) {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 
@@ -691,32 +554,21 @@ public class Ple_Agent {
 	 * @param scale1 - scale of bezier handle 1
 	 * @param scale2 - scale of bezier handle 1
 	 */
-	public void drawBezierInRange(ArrayList<Ple_Agent> boids, float fromDist, float toDist, float scale1, float scale2){
+	public void drawBezierInRange(List<? extends Ple_Agent> boids, float fromDist, float toDist, float scale1, float scale2){
 		for (int i = 0; i < boids.size(); i++) {
 			Ple_Agent other = (Ple_Agent) boids.get(i);
 
 			float d = loc.distance(other.loc);
 			if(d > fromDist && d < toDist){
 
-				Vec3 myVel = vel.scale(scale1).add(loc);
-				Vec3 oVel = other.vel.scale(scale2).add(other.loc);
+//				Vec3 myVel = vel.scale(scale1).add(loc);
+//				Vec3 oVel = other.vel.scale(scale2).add(other.loc);
 
 //				vBezier(loc, myVel, oVel, other.loc);
 			}
 
 		}
 	}
-
-//	/**
-//	 * draw bezier from 4 vectors
-//	 * @param v1 - vector 1
-//	 * @param v2 - vector 2
-//	 * @param v3 - vector 3
-//	 * @param v4 - vector 4
-//	 */
-//	public void vBezier(Vec3D v1, Vec3D v2,Vec3D v3,Vec3D v4){
-//		p5.bezier(v1.x, v1.y, v1.z,    v2.x, v2.y, v2.z,   v3.x, v3.y, v3.z,    v4.x, v4.y, v4.z);
-//	};
 
 	/**
 	 * Wander behaivior in 2D. Based on the script by Daniel Shiffman on Craig Reynolds agents.
@@ -868,7 +720,7 @@ public class Ple_Agent {
 	 * @param cAli - activate alignment
 	 * @param bSep - activate separation
 	 */
-	public void flock(List<Ple_Agent> boids, float desCoh , float desAli, float  desSep , 
+	public void flock(List<? extends Ple_Agent> boids, float desCoh , float desAli, float  desSep , 
 			float cohScale, float aliScale,float sepScale){
 
 		//FLOCK : COH-ALI-SEP (true,true,true);
@@ -960,7 +812,7 @@ public class Ple_Agent {
 	 * @param desCoh
 	 * @param cohScale
 	 */
-	public void cohesionCall(ArrayList <Ple_Agent> boids, float dist, float scale){		
+	public void cohesionCall(List <? extends Ple_Agent> boids, float dist, float scale){		
 		flock(boids,dist,0,0,scale,0,0);		
 	}
 
@@ -970,7 +822,7 @@ public class Ple_Agent {
 	 * @param dist
 	 * @param scale
 	 */
-	public void alignmentCall(List <Ple_Agent> boids, float dist, float scale){		
+	public void alignmentCall(List <? extends Ple_Agent> boids, float dist, float scale){		
 		flock(boids,0,dist,0,0,scale,0);		
 	}
 
@@ -980,7 +832,7 @@ public class Ple_Agent {
 	 * @param dist
 	 * @param scale
 	 */
-	public void separationCall(List <Ple_Agent> boids, float dist, float scale){		
+	public void separationCall(List <? extends Ple_Agent> boids, float dist, float scale){		
 		flock(boids,0,0,dist,0,0,scale);		
 	}
 
