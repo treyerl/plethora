@@ -286,34 +286,35 @@ public class Ple_Agent {
 	 * @param v - vector to test
 	 * @return
 	 */
-	public Vec3 closestNormalToLineString(LineStrip ls, Vec3 v){
+	public Vec3 closestNormalToLineString(List<LineStrip> lls, Vec3 v){
 
 		Vec3 target = null;
 		//Vec3D dir = null;
 		float cloDist = 1000000; 
+		for(LineStrip ls: lls){
+			for (Pair<Vec3, Vec3> pair: ls)  {
+				Vec3 a = pair.first;
+				Vec3 b = pair.second;
 
-		for (Pair<Vec3, Vec3> pair: ls)  {
-			Vec3 a = pair.first;
-			Vec3 b = pair.second;
+				Vec3 normal = getNormalPoint(v,a,b);
 
-			Vec3 normal = getNormalPoint(v,a,b);
+				float da = normal.distance(a);
+				float db = normal.distance(b);
+				Vec3 line = b.subtract(a);
 
-			float da = normal.distance(a);
-			float db = normal.distance(b);
-			Vec3 line = b.subtract(a);
+				if (da + db > line.length()+1) {
+					normal = new Vec3(b.x, b.y, b.z);
+				}
 
-			if (da + db > line.length()+1) {
-				normal = new Vec3(b.x, b.y, b.z);
+				float d = v.distance(normal);
+				if (d < cloDist) {
+					cloDist = d;
+					target = normal;
+					//dir = line.copy();
+					//dir.normalize();
+					//dir.scaleSelf(10);
+				}		
 			}
-
-			float d = v.distance(normal);
-			if (d < cloDist) {
-				cloDist = d;
-				target = normal;
-				//dir = line.copy();
-				//dir.normalize();
-				//dir.scaleSelf(10);
-			}		
 		}
 		return target;
 	}
